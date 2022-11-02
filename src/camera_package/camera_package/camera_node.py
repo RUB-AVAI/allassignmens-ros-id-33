@@ -1,11 +1,11 @@
 import rclpy
+import cv2
 from rclpy.node import Node
 from rclpy.timer import Timer
 from sensor_msgs.msg import Image
 from std_msgs.msg import Bool
 from std_msgs.msg import Float64
 from cv_bridge import CvBridge
-import cv2
 
 
 class CameraNode(Node):

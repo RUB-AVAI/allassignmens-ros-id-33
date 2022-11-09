@@ -37,7 +37,7 @@ class GoForward(Node):
         # Create a publisher which can "talk" to TurtleBot and tell it to move
         # Tip: You may need to change cmd_vel_mux/input/navi to /cmd_vel if you're not using TurtleBot2
         super().__init__(node_name)
-        self.move_publisher = self.create_publisher(Twist, 'cmd_vel', 10)
+        self.move_publisher = self.create_publisher(Twist, '/cmd_vel', 10)
 
 	    # as long as you haven't ctrl + c keeping doing...
         self.timer_ = self.create_timer(1, self.move_callback)

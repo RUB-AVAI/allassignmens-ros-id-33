@@ -19,10 +19,10 @@ class ImageProcessingNode(Node):
         frame = self.bridge.imgmsg_to_cv2(data)
 
         # downsize the image and convert to grayscale, to save bandwidth
-        scale = 2
-        new_size = (frame.shape[1] // scale, frame.shape[0] // scale)
-        frame = cv2.resize(frame, dsize=new_size, fx=1./scale, fy=1./scale)
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        new_size = (640, 480)
+        x_scale = new_size[0] / frame.shape[0]
+        y_scale = new_size[1] / frame.shape[1]
+        frame = cv2.resize(frame, dsize=new_size, fx=x_scale, fy=y_scale)
 
         self.publisher_.publish(self.bridge.cv2_to_imgmsg(frame))
         self.get_logger().info('processed image ->')

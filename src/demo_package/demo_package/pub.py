@@ -14,7 +14,7 @@ class Pub(Node):
     def callback(self):
         self.ctr = self.ctr + 1
         msg = String()
-        msg.data = "%d" % self.ctr
+        msg.data = '%d' % self.ctr
         self.publisher_.publish(msg)
         self.get_logger().info('<- %s' % msg.data)
 

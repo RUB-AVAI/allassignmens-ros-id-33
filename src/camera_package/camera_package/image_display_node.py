@@ -27,7 +27,7 @@ class ImageDisplayNode(Node):
             Image, '/images/processed', self.processed_callback, 10)
 
         # uncomment to see raw images as well note that this will use more bandwidth
-        # self.raw_images_subscription_ = self.create_subscription(Image, 'raw_images', self.raw_callback, 10)
+        self.raw_images_subscription_ = self.create_subscription(Image, 'raw_images', self.raw_callback, 10)
 
         self.camera_ctrl_publisher_ = self.create_publisher(Float64, '/camera/freq', 10)
         self.shutter_publisher_ = self.create_publisher(Bool, '/camera/shutter', 10)
@@ -58,7 +58,7 @@ class ImageDisplayNode(Node):
         # show images in ui and persist to hardrive
         self.get_logger().info('<- processed image')
         frame = self.bridge.imgmsg_to_cv2(data)
-        qt_image = QtGui.QImage(frame.data, frame.shape[1], frame.shape[0], QtGui.QImage.Format_Grayscale8).rgbSwapped()
+        qt_image = QtGui.QImage(frame.data, frame.shape[1], frame.shape[0], QtGui.QImage.Format_RGB888).rgbSwapped()
         self.ui.image_frame.setPixmap(QtGui.QPixmap.fromImage(qt_image))
         filename = "img/" + str(int(datetime.now(timezone.utc).timestamp() * 1000000)) + ".png"
         cv2.imwrite(filename, frame)
@@ -68,8 +68,8 @@ class ImageDisplayNode(Node):
         frame = self.bridge.imgmsg_to_cv2(data)
         qt_image = QtGui.QImage(frame.data, frame.shape[1], frame.shape[0], QtGui.QImage.Format_RGB888).rgbSwapped()
         self.ui.raw_frame.setPixmap(QtGui.QPixmap.fromImage(qt_image))
-        filename = "img/raw/" + str(int(datetime.now(timezone.utc).timestamp() * 1000000)) + ".png"
-        cv2.imwrite(filename, frame)
+        # filename = "img/raw/" + str(int(datetime.now(timezone.utc).timestamp() * 1000000)) + ".png"
+        # cv2.imwrite(filename, frame)
 
 
 def main(args=None):

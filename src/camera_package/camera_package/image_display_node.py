@@ -61,7 +61,7 @@ class ImageDisplayNode(Node):
         qt_image = QtGui.QImage(frame.data, frame.shape[1], frame.shape[0], QtGui.QImage.Format_RGB888).rgbSwapped()
         self.ui.image_frame.setPixmap(QtGui.QPixmap.fromImage(qt_image))
         filename = "img/" + str(int(datetime.now(timezone.utc).timestamp() * 1000000)) + ".png"
-        cv2.imwrite(filename, frame)
+      #  cv2.imwrite(filename, frame)
 
     def raw_callback(self, data):
         self.get_logger().info('<- raw image')

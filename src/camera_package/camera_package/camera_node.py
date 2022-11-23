@@ -13,8 +13,7 @@ class CameraNode(Node):
     def __init__(self):
         super().__init__('camera_node')
         self.timer_period = 0.  # seconds
-        #self.cap = cv2.VideoCapture(0)
-        self.cap = cv2.imread("/home/ubuntu/validation/images/2022-05-11T17_04_00.725633.png")
+        self.cap = cv2.VideoCapture(0)
         self.bridge = CvBridge()
         self.publisher_ = self.create_publisher(Image, '/images/raw', 10)
         self.subscription_ = self.create_subscription(Float64, '/camera/freq', self.camera_ctrl_callback, 10)

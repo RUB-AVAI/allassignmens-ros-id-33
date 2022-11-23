@@ -9,7 +9,7 @@ import torch
 
 class ImageProcessingNode(Node):
     # simple node to process the images
-    model = torch.hub.load("ultralytics/yolov5", 'custom', path='/home/ubuntu/exp4/weights/best.pt')
+    model = torch.hub.load("ultralytics/yolov5", 'custom', path='weights/best_ep600_batch50.pt')
 
     def __init__(self):
         super().__init__('image_processing_node')
@@ -30,7 +30,6 @@ class ImageProcessingNode(Node):
         cvtFrame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         output = self.model(cvtFrame)
         output.show()
-        cv2.imwrite("img/frame.png", cvtFrame)
         frame = cv2.cvtColor(cvtFrame, cv2.COLOR_BGR2RGB)
         self.publisher_.publish(self.bridge.cv2_to_imgmsg(frame))
         self.get_logger().info('processed image ->')

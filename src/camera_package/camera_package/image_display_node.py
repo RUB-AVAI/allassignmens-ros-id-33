@@ -1,6 +1,5 @@
 import sys
 import os
-import cv2
 from cv_bridge import CvBridge
 from PyQt5 import QtWidgets, QtGui
 import rclpy

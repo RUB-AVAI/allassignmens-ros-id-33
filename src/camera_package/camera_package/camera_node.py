@@ -6,6 +6,7 @@ from sensor_msgs.msg import Image
 from std_msgs.msg import Bool
 from std_msgs.msg import Float64
 from cv_bridge import CvBridge
+import os
 
 
 class CameraNode(Node):
@@ -23,7 +24,8 @@ class CameraNode(Node):
 
     def capture_image_callback(self):
         ret, frame = self.cap.read()
-
+        frame = self.cap
+        ret = True
         if ret:
             self.publisher_.publish(self.bridge.cv2_to_imgmsg(frame))
             self.get_logger().info(f"raw image ->")

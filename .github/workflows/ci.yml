@@ -24,16 +24,17 @@ jobs:
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v3
-      - uses: ros-tooling/setup-ros@v0.3
+      - name: setup ROS2
+        uses: ros-tooling/setup-ros@v0.3
         with:
           required-ros-distributions: foxy
-      - name: test/build demo_package
-      - uses: ros-tooling/action-ros-ci@v0.2
+      - name: test and build demo_package
+        uses: ros-tooling/action-ros-ci@v0.2
         with:
           package-name: demo_package
           target-ros2-distro: foxy
-      - name: test/build movement_controller
-      - uses: ros-tooling/action-ros-ci@v0.2
+      - name: test and build movement_controller
+        uses: ros-tooling/action-ros-ci@v0.2
         with:
           package-name: movement_controller
           target-ros2-distro: foxy

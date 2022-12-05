@@ -1,9 +1,8 @@
 from unittest import TestCase
-from unittest.mock import patch
 import rclpy
-from src.movement_controller.movement_controller.controller_node import Controller
 from geometry_msgs.msg import Twist
 from pynput.keyboard import Key, KeyCode
+from src.movement_controller.movement_controller.controller_node import Controller
 
 
 class ControllerTest(TestCase):

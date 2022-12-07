@@ -56,6 +56,8 @@ class ControllerTest(TestCase):
         self.check_vel_control('d')
 
 
+# =========== INTEGRATION TESTS ===============
+
 class ControllerIntegrationTest(TestCase):
 
     @classmethod
@@ -71,9 +73,9 @@ class ControllerIntegrationTest(TestCase):
         self.controller_sub = rclpy.create_node('controller_sub')
         self.received_messages = []
         self.controller_sub.create_subscription(Twist,
-                                            '/cmd_vel',
-                                            lambda m: self.received_messages.append(m),
-                                            10)
+                                                '/cmd_vel',
+                                                lambda m: self.received_messages.append(m),
+                                                10)
 
     def tearDown(self) -> None:
         self.controller.destroy_node()
@@ -98,5 +100,3 @@ class ControllerIntegrationTest(TestCase):
         self.check_last_twist(self.controller.angular_vel,
                               self.controller.linear_vel)
         self.receives_messages = [0]
-
-

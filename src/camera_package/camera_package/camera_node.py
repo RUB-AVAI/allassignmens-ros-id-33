@@ -14,6 +14,7 @@ class CameraNode(Node):
         super().__init__('camera_node')
         self.timer_period = 0.  # seconds
         self.cap = cv2.VideoCapture(0)
+        #gself.cap = cv2.VideoCapture("rtsp://web.nidaku.de:8554/avai")
         self.bridge = CvBridge()
         self.publisher_ = self.create_publisher(Image, '/images/raw', 10)
         self.subscription_ = self.create_subscription(Float64, '/camera/freq', self.camera_ctrl_callback, 10)
@@ -23,7 +24,6 @@ class CameraNode(Node):
 
     def capture_image_callback(self):
         ret, frame = self.cap.read()
-
         if ret:
             self.publisher_.publish(self.bridge.cv2_to_imgmsg(frame))
             self.get_logger().info(f"raw image ->")

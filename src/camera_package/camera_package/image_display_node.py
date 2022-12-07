@@ -19,6 +19,8 @@ class ImageDisplayNode(Node):
     def __init__(self, ui):
         super().__init__('image_display_node')
 
+        self.current_freq = 0
+
         self.ui = ui
         self.ui.shutterBtn.clicked.connect(self.camera_shutter_callback_)
         self.ui.updateCameraFreqBtn.clicked.connect(self.camera_freq_publisher_callback_)
@@ -35,17 +37,22 @@ class ImageDisplayNode(Node):
 
     def camera_freq_publisher_callback_(self):
         # set the camera freq
-        if not self.ui.lineEdit.text():
-            self.get_logger().warn("no input given")
-        else:
-            camera_freq = float(self.ui.lineEdit.text())
-            msg = Float64()
-            if camera_freq == 0.:
-                msg.data = camera_freq
+        try:
+            if not self.ui.lineEdit.text():
+                self.get_logger().warn("no input given")
             else:
-                msg.data = 1. / camera_freq
-            self.camera_ctrl_publisher_.publish(msg)
-            self.get_logger().info(f'camera timer period: {msg.data} ->')
+                camera_freq = float(self.ui.lineEdit.text())
+        except:
+            camera_freq = float(self.current_freq)
+
+        self.current_freq = camera_freq
+        msg = Float64()
+        if camera_freq == 0.:
+            msg.data = camera_freq
+        else:
+            msg.data = 1. / camera_freq
+        self.camera_ctrl_publisher_.publish(msg)
+        self.get_logger().info(f'camera timer period: {msg.data} ->')
 
     def camera_shutter_callback_(self):
         # take a single foto

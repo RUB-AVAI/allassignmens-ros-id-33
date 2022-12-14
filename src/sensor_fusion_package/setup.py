@@ -21,6 +21,7 @@ setup(
     entry_points={
         'console_scripts': [
             'sensor_fusion_node = fusion_package.sensor_fusion:main',
+            'lidar_info_node = fusion_package.lidar_info_node:main'
         ],
     },
 )

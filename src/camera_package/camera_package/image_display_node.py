@@ -21,14 +21,15 @@ class ImageDisplayNode(Node):
         self.ui = ui
         self.ui.shutterBtn.clicked.connect(self.camera_shutter_callback_)
         self.ui.updateCameraFreqBtn.clicked.connect(self.camera_freq_publisher_callback_)
+        self.ui.showLidarBtn.clicked.connect(self.display_lidar_graph_)
 
         self.processed_images_subscription_ = self.create_subscription(
             Image, '/images/processed', self.processed_callback, 10)
 
         # uncomment to see raw images as well note that this will use more bandwidth
         self.raw_images_subscription_ = self.create_subscription(Image, 'raw_images', self.raw_callback, 10)
-
         self.camera_ctrl_publisher_ = self.create_publisher(Float64, '/camera/freq', 10)
+        self.lidar_graph_publisher_ = self.create_publisher(Bool, '/lidar/graph', 10)
         self.shutter_publisher_ = self.create_publisher(Bool, '/camera/shutter', 10)
         self.bridge = CvBridge()
 
@@ -69,6 +70,12 @@ class ImageDisplayNode(Node):
         self.ui.raw_frame.setPixmap(QtGui.QPixmap.fromImage(qt_image))
         # filename = "img/raw/" + str(int(datetime.now(timezone.utc).timestamp() * 1000000)) + ".png"
         # cv2.imwrite(filename, frame)
+
+    def display_lidar_graph_(self):
+        msg = Bool()
+        msg.data = True
+        self.lidar_graph_publisher_.publish(msg)
+
 
 
 def main(args=None):

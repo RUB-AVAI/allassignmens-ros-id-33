@@ -39,10 +39,13 @@ class Lidar_info_node(Node):
 
             for x in self.x:
                 if ausgleich[x] < changedData[x]:
-                    plt.scatter(x, ausgleich[x], color='red')
+                    if changedData[x] != -self.confidence:
+                        plt.scatter(x, ausgleich[x], color='red')
                 else:
-                    plt.scatter(x, ausgleich[x], color='green')
-                plt.scatter(x, changedData[x], color='blue')
+                    if changedData[x] != -self.confidence:
+                        plt.scatter(x, ausgleich[x], color='green')
+                if changedData[x] != -self.confidence:
+                    plt.scatter(x, changedData[x], color='blue')
 
             plt.show()
 

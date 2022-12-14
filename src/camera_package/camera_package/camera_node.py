@@ -6,6 +6,7 @@ from sensor_msgs.msg import Image
 from std_msgs.msg import Bool
 from std_msgs.msg import Float64
 from cv_bridge import CvBridge
+import os
 
 
 class CameraNode(Node):

@@ -23,6 +23,7 @@ setup(
             'camera_node = camera_package.camera_node:main',
             'image_display_node = camera_package.image_display_node:main',
             'image_processing_node = camera_package.image_processing_node:main',
+            'lidar_node = camera_package.lidar_node:main'
         ],
     },
 )

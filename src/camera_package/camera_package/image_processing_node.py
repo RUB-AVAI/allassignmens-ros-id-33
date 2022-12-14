@@ -46,7 +46,6 @@ class ImageProcessingNode(Node):
         npmsg = Float32MultiArray()
         for i in range(len(npflat)):
             npmsg.data.append(npflat[i])
-        print(len(npmsg))
         self.publisher_labels.publish(npmsg)
         frame = cv2.cvtColor(cvtFrame, cv2.COLOR_BGR2RGB)
         print((time.time() - start) * 1000)

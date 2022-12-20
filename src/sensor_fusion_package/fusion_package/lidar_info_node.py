@@ -28,7 +28,7 @@ class Lidar_info_node(Node):
         if len(self.distances) == 0:
             pass
         else:
-            for i in range(self.vAmout):
+            for i in range(146, 214):
                 self.x.append(i)
             ausgleich = []
             changedData = self.distances.copy()

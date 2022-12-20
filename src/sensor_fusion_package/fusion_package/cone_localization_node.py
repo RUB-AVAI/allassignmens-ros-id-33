@@ -10,9 +10,9 @@ class ConeLocalizationNode(Node):
         super().__init__('cone_localization_node')
         self.lidar_data = np.asarray([0 for _ in range(360)])
         self.cones = []
-        self.create_subscription(Float32MultiArray, '/images/labels', self.received_labels, 10)
-        self.create_subscription(Float32MultiArray, '/laser/scanned', self.received_lidar_data, 10)
-        self.create_subscription(Bool, '/lidar/graph', self.draw_callback, 10)
+        self.labelsub = self.create_subscription(Float32MultiArray, '/images/labels', self.received_labels, 10)
+        self.lasersub = self.create_subscription(Float32MultiArray, '/laser/scanned', self.received_lidar_data, 10)
+        self.graphsub = self.create_subscription(Bool, '/lidar/graph', self.draw_callback, 10)
 
     def draw_callback(self, data):
         self.get_logger().info('Draw graph')

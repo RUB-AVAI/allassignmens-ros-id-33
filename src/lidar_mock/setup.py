@@ -1,6 +1,6 @@
 from setuptools import setup
 
-package_name = 'fusion_package'
+package_name = 'lidar_mock'
 
 setup(
     name=package_name,
@@ -20,9 +20,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'sensor_fusion_node = fusion_package.sensor_fusion:main',
-            'lidar_info_node = fusion_package.lidar_info_node:main',
-            'cone_localization_node = fusion_package.cone_localization_node:main'
+            'lidar_mock_node = lidar_mock.lidar_mock_node:main'
         ],
     },
 )

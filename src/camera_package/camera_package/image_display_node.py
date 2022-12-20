@@ -75,6 +75,7 @@ class ImageDisplayNode(Node):
     def display_lidar_graph_(self):
         msg = Bool()
         msg.data = True
+        self.get_logger().info('graph request->')
         self.lidar_graph_publisher_.publish(msg)
 
 

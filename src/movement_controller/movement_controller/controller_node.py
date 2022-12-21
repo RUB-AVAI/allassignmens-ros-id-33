@@ -26,7 +26,7 @@ class Controller(Node):
                     self.linear_vel = -.2
                 elif char == 'a':
                     self.angular_vel = 1.
-                elif char == 'd':
+                elif char == 'rd':
                     self.angular_vel = -1.
 
         except Exception as e:

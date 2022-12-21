@@ -36,6 +36,10 @@ class Ui_MainWindow(object):
         self.shutterBtn.setObjectName("shutterBtn")
         self.verticalLayout.addWidget(self.shutterBtn)
 
+        self.showLidarBtn = QtWidgets.QPushButton(self.centralwidget)
+        self.showLidarBtn.setObjectName("lidarBtn")
+        self.verticalLayout.addWidget(self.showLidarBtn)
+
         MainWindow.setCentralWidget(self.centralwidget)
 
         self.retranslateUi(MainWindow)
@@ -46,3 +50,4 @@ class Ui_MainWindow(object):
         MainWindow.setWindowTitle(_translate("MainWindow", "Camera Control Center"))
         self.shutterBtn.setText(_translate("MainWindow", "Shutter"))
         self.updateCameraFreqBtn.setText(_translate("MainWindow", "Update Camera Frequency (Hz)"))
+        self.showLidarBtn.setText(_translate("MainWindow", "show lidar graph"))

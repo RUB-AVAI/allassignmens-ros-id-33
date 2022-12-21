@@ -13,10 +13,12 @@ class ConeLocalizationNode(Node):
         self.labelsub = self.create_subscription(Float32MultiArray, '/images/labels', self.received_labels, 10)
         self.lasersub = self.create_subscription(Float32MultiArray, '/laser/scanned', self.received_lidar_data, 10)
         self.graphsub = self.create_subscription(Bool, '/lidar/graph', self.draw_callback, 10)
+        self.fig, self.ax = plt.subplots()
 
     def draw_callback(self, data):
         self.get_logger().info('Draw graph')
         # draw robot in the middle
+        self.ax.cla()
         X = [0]
         Y = [0]
         colors = ['black']
@@ -29,20 +31,25 @@ class ConeLocalizationNode(Node):
             lidar_x.append(x)
             lidar_y.append(y)
 
-        plt.scatter(lidar_x, lidar_y, s=.4)
+        self.ax.scatter(lidar_x, lidar_y, s=.4)
 
+
+        line_x = []
+        line_y = []
+        dist = np.linspace(0, 2, 100)
+        for d in dist:
+            lx, ly = self.get_euclidean_coordinates(148, d)
+            line_x.append(lx)
+            line_y.append(ly)
+        for d in dist:
+            lx, ly = self.get_euclidean_coordinates(212, d)
+            line_x.append(lx)
+            line_y.append(ly)
+        self.ax.plot(line_x, line_y)
 
         for cone in self.cones:
-            dist = np.linspace(0, 2, 100)
-            line_x = []
-            line_y = []
-            for d in dist:
-                lx, ly = self.get_euclidean_coordinates(cone[0], d)
-                line_x.append(lx)
-                line_y.append(ly)
-            plt.plot(line_x, line_y)
-
             x, y = self.get_euclidean_coordinates(cone[0], cone[1])
+            print("distance: ", cone[1], "labelclass: ", cone[3], "angle: ", cone[0])
             X.append(x)
             Y.append(y)
             confidence.append(cone[2])
@@ -55,17 +62,18 @@ class ConeLocalizationNode(Node):
             else:
                 colors.append('red')
 
-        plt.scatter(X, Y, color=colors, alpha=confidence)
-        plt.show()
+        self.ax.scatter(X, Y, color=colors, alpha=confidence)
+        plt.pause(.1)
 
     @staticmethod
     def get_euclidean_coordinates(angle, distance):
         rad = angle * (np.pi / 180)
-        x = distance * np.cos(-rad)
+        x = distance * np.cos(rad)
         y = distance * np.sin(-rad)
         return x, y
 
     def received_labels(self, data):
+        self.draw_callback(None)
         received = np.asarray(data.data)
         received = received.reshape(int(len(received) / 6), 6)
         # x1, y1, x2, y2, conf, label
@@ -80,10 +88,12 @@ class ConeLocalizationNode(Node):
             shift = difference*1/6
 
             cone_distances = self.lidar_data[round(start+shift):round(end-shift)]
+            cone_distances = list(filter(lambda x: 0 < x < 2.5, cone_distances))
+
             self.get_logger().info(f"The cone with color {cone[5]} started with {cone[0]} and ended with {cone[2]}")
             print(cone_distances)
-            if len(cone_distances) < 3:
-                pass
+            if len(cone_distances) < 2:
+                continue
             else:
                 distance = np.median(cone_distances)
                 angle = (start + end) / 2.
@@ -96,7 +106,7 @@ class ConeLocalizationNode(Node):
 
     @staticmethod
     def calculate_lidar_range(cone):
-        fov = 62.2
+        fov = 64
         left  = 180 - (fov / 2)
         n_pixels = 640
         print("cone 0: ", cone[0])

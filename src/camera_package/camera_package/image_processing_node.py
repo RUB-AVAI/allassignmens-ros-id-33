@@ -27,9 +27,7 @@ class ImageProcessingNode(Node):
     def process_image_callback(self, data):
         start = time.time()
         self.get_logger().info('<- raw image')
-
         frame = self.bridge.imgmsg_to_cv2(data)
-
         # downsize the image and convert to grayscale, to save bandwidth
         new_size = (640, 480)
         x_scale = new_size[0] / frame.shape[0]

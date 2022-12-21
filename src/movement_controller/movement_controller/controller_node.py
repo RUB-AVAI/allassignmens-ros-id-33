@@ -3,14 +3,15 @@ from rclpy.node import Node
 from pynput import keyboard
 from geometry_msgs.msg import Twist
 
+PUBLISHER_PERIOD = .5
 
 class Controller(Node):
     def __init__(self):
         super().__init__('controller_node')
         self.angular_vel = 0.
         self.linear_vel = 0.
-        self.pub_speed = self.create_publisher(Twist, 'cmd_vel', 10)
-        self.timer = self.create_timer(.5, self.timer_callback)
+        self.pub_speed = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.timer = self.create_timer(PUBLISHER_PERIOD, self.timer_callback)
         self.keyboard_listener = keyboard.Listener(on_press=self.on_press, on_release=self.on_release)
         self.keyboard_listener.start()
         self.get_logger().info("startup complete")

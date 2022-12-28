@@ -115,7 +115,7 @@ class ConeLocalizationNode(Node):
         if self.lidar_cache_size < self.lidar_cache_target:
             self.lidar_cache.append(lidar_data)
             self.lidar_cache_size += 1
-            self.lidar_cache_current += 1
+
 
 
 

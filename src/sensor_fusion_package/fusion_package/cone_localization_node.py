@@ -2,16 +2,24 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray, Bool
 import numpy as np
+from sensor_msgs.msg import LaserScan
 from matplotlib import pyplot as plt
+from rclpy.qos import qos_profile_sensor_data, QoSProfile
+
 
 class ConeLocalizationNode(Node):
 
+
     def __init__(self):
         super().__init__('cone_localization_node')
-        self.lidar_data = np.asarray([0 for _ in range(360)])
+
         self.cones = []
+        self.lidar_cache = []
+        self.lidar_cache_size = 0
+        self.lidar_cache_target = 100
+        self.lidar_cache_current = -1
         self.labelsub = self.create_subscription(Float32MultiArray, '/images/labels', self.received_labels, 10)
-        self.lasersub = self.create_subscription(Float32MultiArray, '/laser/scanned', self.received_lidar_data, 10)
+        self.lasersub = self.create_subscription(LaserScan, '/scan', self.received_lidar_data, qos_profile=qos_profile_sensor_data)
         self.graphsub = self.create_subscription(Bool, '/lidar/graph', self.draw_callback, 10)
         self.fig, self.ax = plt.subplots()
 
@@ -32,7 +40,6 @@ class ConeLocalizationNode(Node):
             lidar_y.append(y)
 
         self.ax.scatter(lidar_x, lidar_y, s=.4)
-
 
         line_x = []
         line_y = []
@@ -85,9 +92,9 @@ class ConeLocalizationNode(Node):
             offset = 3.5
             start += offset
             end += offset
-            shift = difference*1/6
+            shift = difference * 1 / 6
 
-            cone_distances = self.lidar_data[round(start+shift):round(end-shift)]
+            cone_distances = self.lidar_data[round(start + shift):round(end - shift)]
             cone_distances = list(filter(lambda x: 0 < x < 2.5, cone_distances))
 
             self.get_logger().info(f"The cone with color {cone[5]} started with {cone[0]} and ended with {cone[2]}")
@@ -102,23 +109,32 @@ class ConeLocalizationNode(Node):
         self.cones = received_cones
 
     def received_lidar_data(self, data):
-        self.lidar_data = np.asarray(data.data[::-1])
+
+        lidar_data = np.asarray(data.ranges[::-1])
+
+        if self.lidar_cache_size < self.lidar_cache_target:
+            self.lidar_cache.append(lidar_data)
+            self.lidar_cache_size += 1
+            self.lidar_cache_current += 1
+
+
 
     @staticmethod
     def calculate_lidar_range(cone):
         fov = 64
-        left  = 180 - (fov / 2)
+        left = 180 - (fov / 2)
         n_pixels = 640
         print("cone 0: ", cone[0])
         print("cone 2:", cone[2])
-        start = left + cone[0] * fov/n_pixels
-        end = left + cone[2] * fov/n_pixels
+        start = left + cone[0] * fov / n_pixels
+        end = left + cone[2] * fov / n_pixels
 
         return start, end
 
 
 def main(args=None):
     rclpy.init(args=args)
+    qos = QoSProfile(depth=10)
     cone_loc_node = ConeLocalizationNode()
     rclpy.spin(cone_loc_node)
     cone_loc_node.destroy_node()

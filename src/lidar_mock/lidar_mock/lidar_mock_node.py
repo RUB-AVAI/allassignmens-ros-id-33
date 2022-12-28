@@ -11,7 +11,7 @@ class LidarMockNode(Node):
         self.get_logger().info('startup')
         self.lidar_publisher = self.create_publisher(Float32MultiArray, '/laser/scanned', 10)
         self.lidar_data = [10 * np.sin(np.pi * (i / 180)) for i in range(360)]
-        self.timer = self.create_timer(.5, self.timer_callback)
+        self.timer = self.create_timer(.1, self.timer_callback)
         self.get_logger().info('startup complete')
 
     def timer_callback(self):

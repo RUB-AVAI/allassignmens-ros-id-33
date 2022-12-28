@@ -17,9 +17,10 @@ class ConeLocalizationNode(Node):
         self.lidar_cache = []
         self.lidar_cache_size = 0
         self.lidar_cache_target = 100
-        self.lidar_cache_current = -1
+        self.lidar_cache_current = 0
         self.labelsub = self.create_subscription(Float32MultiArray, '/images/labels', self.received_labels, 10)
-        self.lasersub = self.create_subscription(LaserScan, '/scan', self.received_lidar_data, qos_profile=qos_profile_sensor_data)
+        self.lasersub = self.create_subscription(Float32MultiArray, '/laser/scanned', self.received_lidar_data, 10)
+        #self.lasersub = self.create_subscription(LaserScan, '/scan', self.received_lidar_data, qos_profile=qos_profile_sensor_data)
         self.graphsub = self.create_subscription(Bool, '/lidar/graph', self.draw_callback, 10)
         self.fig, self.ax = plt.subplots()
 
@@ -109,13 +110,14 @@ class ConeLocalizationNode(Node):
         self.cones = received_cones
 
     def received_lidar_data(self, data):
-
-        lidar_data = np.asarray(data.ranges[::-1])
+        lidar_data = np.asarray(data.data[::-1])
 
         if self.lidar_cache_size < self.lidar_cache_target:
             self.lidar_cache.append(lidar_data)
             self.lidar_cache_size += 1
-
+        else:
+            self.lidar_cache_current = (self.lidar_cache_current + 1) % self.lidar_cache_target
+            self.lidar_cache[self.lidar_cache_current] = lidar_data
 
 
 

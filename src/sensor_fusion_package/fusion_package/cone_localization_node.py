@@ -17,7 +17,7 @@ class ConeLocalizationNode(Node):
         self.lidar_cache = []
         self.lidar_cache_size = 0
         self.lidar_cache_target = 100
-        self.lidar_cache_current = 0
+        self.lidar_cache_current = -1
         self.labelsub = self.create_subscription(Float32MultiArray, '/images/labels', self.received_labels, 10)
         self.lasersub = self.create_subscription(Float32MultiArray, '/laser/scanned', self.received_lidar_data, 10)
         #self.lasersub = self.create_subscription(LaserScan, '/scan', self.received_lidar_data, qos_profile=qos_profile_sensor_data)
@@ -35,7 +35,7 @@ class ConeLocalizationNode(Node):
 
         lidar_x = []
         lidar_y = []
-        for angle, distance in enumerate(self.lidar_data):
+        for angle, distance in enumerate(self.lidar_cache[self.lidar_cache_current]):
             x, y = self.get_euclidean_coordinates(angle, distance)
             lidar_x.append(x)
             lidar_y.append(y)
@@ -82,6 +82,9 @@ class ConeLocalizationNode(Node):
 
     def received_labels(self, data):
         self.draw_callback(None)
+        timestamp_sec = data.data[0]
+        timestamp_ns = data.data[1]
+        data.data = data.data[2:len(data.data)]
         received = np.asarray(data.data)
         received = received.reshape(int(len(received) / 6), 6)
         # x1, y1, x2, y2, conf, label
@@ -95,7 +98,7 @@ class ConeLocalizationNode(Node):
             end += offset
             shift = difference * 1 / 6
 
-            cone_distances = self.lidar_data[round(start + shift):round(end - shift)]
+            cone_distances = self.lidar_cache[self.lidar_cache_current][round(start + shift):round(end - shift)]
             cone_distances = list(filter(lambda x: 0 < x < 2.5, cone_distances))
 
             self.get_logger().info(f"The cone with color {cone[5]} started with {cone[0]} and ended with {cone[2]}")
@@ -110,13 +113,15 @@ class ConeLocalizationNode(Node):
         self.cones = received_cones
 
     def received_lidar_data(self, data):
-        lidar_data = np.asarray(data.data[::-1])
 
+        self.get_logger().info("new lidar data")
+        lidar_data = np.asarray(data.data[::-1])
+        self.lidar_cache_current = (self.lidar_cache_current + 1) % self.lidar_cache_target
         if self.lidar_cache_size < self.lidar_cache_target:
             self.lidar_cache.append(lidar_data)
             self.lidar_cache_size += 1
+
         else:
-            self.lidar_cache_current = (self.lidar_cache_current + 1) % self.lidar_cache_target
             self.lidar_cache[self.lidar_cache_current] = lidar_data
 
 
@@ -126,8 +131,8 @@ class ConeLocalizationNode(Node):
         fov = 64
         left = 180 - (fov / 2)
         n_pixels = 640
-        print("cone 0: ", cone[0])
-        print("cone 2:", cone[2])
+        #print("cone 0: ", cone[0])
+        #print("cone 2:", cone[2])
         start = left + cone[0] * fov / n_pixels
         end = left + cone[2] * fov / n_pixels
 

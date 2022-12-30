@@ -37,16 +37,17 @@ class ImageProcessingNode(Node):
         cvtFrame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         output = self.model(cvtFrame)
         output.render()
-
+        print(data.header)
         npOut = output.pandas().xyxy[0].to_numpy()
         npflat = npOut[:, :npOut.shape[1] - 1].flatten()
-
         npmsg = Float32MultiArray()
+        npmsg.data.append(float(data.header.stamp.sec))
+        npmsg.data.append(float(data.header.stamp.nanosec))
         for i in range(len(npflat)):
             npmsg.data.append(npflat[i])
         self.publisher_labels.publish(npmsg)
         frame = cv2.cvtColor(cvtFrame, cv2.COLOR_BGR2RGB)
-        print((time.time() - start) * 1000)
+        # print((time.time() - start) * 1000)
         self.publisher_.publish(self.bridge.cv2_to_imgmsg(frame))
         self.get_logger().info('processed image ->')
 

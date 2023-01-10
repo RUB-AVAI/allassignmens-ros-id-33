@@ -3,6 +3,7 @@ from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray, Bool
 import numpy as np
 from sensor_msgs.msg import LaserScan
+from nav_msgs.msg import Odometry
 from matplotlib import pyplot as plt
 from rclpy.qos import qos_profile_sensor_data, QoSProfile
 
@@ -13,6 +14,8 @@ class ConeLocalizationNode(Node):
     def __init__(self):
         super().__init__('cone_localization_node')
 
+        # TODO: also cache labels and odometry data with timestamps
+
         self.cones = []
         self.lidar_cache = []
         self.lidar_cache_size = 0
@@ -20,7 +23,7 @@ class ConeLocalizationNode(Node):
         self.lidar_cache_current = -1
         self.labelsub = self.create_subscription(Float32MultiArray, '/images/labels', self.received_labels, 10)
         self.lasersub = self.create_subscription(LaserScan, '/scan', self.received_lidar_data, qos_profile=qos_profile_sensor_data)
-        self.odometrysub = self.create_subscription()
+        self.odometrysub = self.create_subscription(Odometry, '/odom', self.odometry_callback, 10)
         self.graphsub = self.create_subscription(Bool, '/lidar/graph', self.draw_callback, 10)
         self.fig, self.ax = plt.subplots()
 
@@ -71,8 +74,7 @@ class ConeLocalizationNode(Node):
                 colors.append('red')
 
         self.ax.scatter(X, Y, color=colors, alpha=confidence)
-        # plt.pause(.1)
-        # plt.show()
+        plt.pause(.1)
 
     @staticmethod
     def get_euclidean_coordinates(angle, distance):
@@ -82,6 +84,8 @@ class ConeLocalizationNode(Node):
         return x, y
 
     def received_labels(self, data):
+        # TODO: cache labels
+        # TODO: match labels with lidar data
         self.draw_callback(None)
         timestamp_sec = data.data[0]
         timestamp_ns = data.data[1]
@@ -124,6 +128,12 @@ class ConeLocalizationNode(Node):
 
         else:
             self.lidar_cache[self.lidar_cache_current] = lidar_data
+
+        self.draw_callback(0)
+
+    def odometry_callback(self, msg):
+        p = np.asarray([msg.pose.pose.position.x, msg.pose.pose.position.y])
+        print(f'x:{p[0]}, y:{p[1]}')
 
 
 

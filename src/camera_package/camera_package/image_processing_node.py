@@ -9,9 +9,10 @@ from cv_bridge import CvBridge
 import torch
 from std_msgs.msg import Float32MultiArray
 
+import yolov5.models.common
 
 #edge tpu imports
-import tflite_runtime.interpreter as tflite
+#import tflite_runtime.interpreter as tflite
 
 class ImageProcessingNode(Node):
     # simple node to process the images
@@ -25,9 +26,15 @@ class ImageProcessingNode(Node):
         self.publisher_labels = self.create_publisher(Float32MultiArray, '/images/labels', 10)
         self.subscription_ = self.create_subscription(Image, '/images/raw', self.process_image_callback, 10)
 
+        self.PATH_TO_LABELS = "/home/ubuntu/allassignmens-ros-id-33/weights/label.yaml"
+        self.PATH_TO_MODEL = "/home/ubuntu/allassignmens-ros-id-33/weights/best-int8 (2).tflite"
 
-        self.tflitemodel = "weights/best-int8 (2).tflite"
-        self.interpreter = tflite.Interpreter(self.tflitemodel, experimental_delegates=[tflite.load_delegate('libedgetpu.so.1')])
+        self.inpret = yolov5.models.common.DetectMultiBackend(self.PATH_TO_MODEL, data=self.PATH_TO_LABELS)
+        self.inpret = yolov5.models.common.AutoShape(self.inpret)
+
+
+       # self.tflitemodel = "weights/best-int8 (2).tflite"
+       # self.interpreter = tflite.Interpreter(self.tflitemodel, experimental_delegates=[tflite.load_delegate('libedgetpu.so.1')])
 
     def process_image_callback(self, data):
         start = time.time()
@@ -41,12 +48,9 @@ class ImageProcessingNode(Node):
 
         cvtFrame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
-        output = self.interpreter(cvtFrame)
-
-
-    #    output = self.model(cvtFrame)
-    #   output.render()
-    #    print(data.header)
+        output = self.inpret(cvtFrame)
+        output.render()
+        print(data.header)
         npOut = output.pandas().xyxy[0].to_numpy()
 
         npflat = npOut[:, :npOut.shape[1] - 1].flatten()

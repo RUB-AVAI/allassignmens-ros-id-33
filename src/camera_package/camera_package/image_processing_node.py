@@ -7,32 +7,27 @@ from rclpy.node import Node
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 import torch
-from yolov5.models import common
-from yolov5.models.common import AutoShape
 from std_msgs.msg import Float32MultiArray
 
+
+#edge tpu imports
+import tflite_runtime.interpreter as tflite
 
 class ImageProcessingNode(Node):
     # simple node to process the images
     yolov5model600 = "weights/best_ep600_batch50.pt"
     yolov5model300 = "weights/best_ep300_batch50.pt"
     #model = torch.hub.load("ultralytics/yolov5", 'custom', path=yolov5model300)
-
     def __init__(self):
+        super().__init__('image_processing_node')
         self.bridge = CvBridge()
         self.publisher_ = self.create_publisher(Image, '/images/processed', 10)
         self.publisher_labels = self.create_publisher(Float32MultiArray, '/images/labels', 10)
         self.subscription_ = self.create_subscription(Image, '/images/raw', self.process_image_callback, 10)
 
-        self.LABELPATH = "/home/ubuntu/allassignmens-ros-id-33/weights/label.yaml"
-        self.TFLITEMODEL = "weights/best-int8 (2).tflite"
-        super().__init__('image_processing_node')
 
-        self.model = common.DetectMultiBackend(weights=self.TFLITEMODEL, data=self.LABELPATH)
-        self.model = AutoShape(self.model)
-        self.model = self.model.to(torch.device('cpu'))
-
-
+        self.tflitemodel = "weights/best-int8 (2).tflite"
+        self.interpreter = tflite.Interpreter(self.tflitemodel, experimental_delegates=[tflite.load_delegate('libedgetpu.so.1')])
 
     def process_image_callback(self, data):
         start = time.time()
@@ -45,12 +40,19 @@ class ImageProcessingNode(Node):
         frame = cv2.resize(frame, dsize=new_size, fx=x_scale, fy=y_scale)
 
         cvtFrame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-        output = self.model(cvtFrame)
-        output.render()
-        print(data.header)
+
+        output = self.interpreter(cvtFrame)
+
+
+    #    output = self.model(cvtFrame)
+    #   output.render()
+    #    print(data.header)
         npOut = output.pandas().xyxy[0].to_numpy()
+
         npflat = npOut[:, :npOut.shape[1] - 1].flatten()
         npmsg = Float32MultiArray()
+
+
         npmsg.data.append(float(data.header.stamp.sec))
         npmsg.data.append(float(data.header.stamp.nanosec))
         for i in range(len(npflat)):

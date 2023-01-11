@@ -6,6 +6,8 @@ from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import Odometry
 from matplotlib import pyplot as plt
 from rclpy.qos import qos_profile_sensor_data, QoSProfile
+import message_filters
+from avai_messages.msg import Cones
 
 
 class ConeLocalizationNode(Node):
@@ -17,20 +19,42 @@ class ConeLocalizationNode(Node):
         # TODO: also cache labels and odometry data with timestamps
 
         self.cones = []
-        self.lidar_cache = []
-        self.lidar_cache_size = 0
-        self.lidar_cache_target = 100
-        self.lidar_cache_current = -1
-        self.labelsub = self.create_subscription(Float32MultiArray, '/images/labels', self.received_labels, 10)
-        self.lasersub = self.create_subscription(LaserScan, '/scan', self.received_lidar_data, qos_profile=qos_profile_sensor_data)
-        self.odometrysub = self.create_subscription(Odometry, '/odom', self.odometry_callback, 10)
-        self.graphsub = self.create_subscription(Bool, '/lidar/graph', self.draw_callback, 10)
+        self.lidar_data = []
+        self.position = []
+        # self.labelsub = self.create_subscription(Float32MultiArray, '/images/labels', self.received_labels, 10)
+        # self.lasersub = self.create_subscription(LaserScan, '/scan', self.received_lidar_data, qos_profile=qos_profile_sensor_data)
+        # self.odometrysub = self.create_subscription(Odometry, '/odom', self.odometry_callback, 10)
+        # self.graphsub = self.create_subscription(Bool, '/lidar/graph', self.draw_callback, 10)
         self.fig, self.ax = plt.subplots()
 
+        self.laserfilt = message_filters.Subscriber(self, LaserScan, '/scan', qos_profile=qos_profile_sensor_data)
+        self.odomfilt = message_filters.Subscriber(self, Odometry, '/odom')
+        self.labelfilt = message_filters.Subscriber(self, Cones , '/images/labels')
+
+        self.draw_synchronizer = message_filters.ApproximateTimeSynchronizer([self.laserfilt, self.odomfilt], queue_size=25, slop=.2)
+        self.draw_synchronizer.registerCallback(self.synchronized_callback)
+
+        self.cone_synchronizer = message_filters.ApproximateTimeSynchronizer([self.laserfilt, self.odomfilt, self.labelfilt], queue_size=1000, slop=.5)
+        self.cone_synchronizer.registerCallback(self.fusion_callback)
+
+    def fusion_callback(self, laser, odom, labels):
+        self.get_logger().info("Start fusion")
+        lidar_data = np.asarray(laser.ranges[::-1])
+        position = np.asarray([odom.pose.pose.position.x, odom.pose.pose.position.y])
+
+    def synchronized_callback(self, laser, odom):
+        lidar_data = np.asarray(laser.ranges[::-1])
+        position = np.asarray([odom.pose.pose.position.x, odom.pose.pose.position.y])
+
+        self.lidar_data = lidar_data
+        self.position = position
+        self.draw_callback(0)
+
     def draw_callback(self, data):
-        self.get_logger().info('Draw graph')
         # draw robot in the middle
         self.ax.cla()
+        X = [self.position[0]]
+        Y = [self.position[1]]
         X = [0]
         Y = [0]
         colors = ['black']
@@ -38,7 +62,7 @@ class ConeLocalizationNode(Node):
 
         lidar_x = []
         lidar_y = []
-        for angle, distance in enumerate(self.lidar_cache[self.lidar_cache_current]):
+        for angle, distance in enumerate(self.lidar_data):
             x, y = self.get_euclidean_coordinates(angle, distance)
             lidar_x.append(x)
             lidar_y.append(y)
@@ -50,17 +74,17 @@ class ConeLocalizationNode(Node):
         dist = np.linspace(0, 2, 100)
         for d in dist:
             lx, ly = self.get_euclidean_coordinates(148, d)
-            line_x.append(lx)
-            line_y.append(ly)
+            line_x.append(X[0] + lx)
+            line_y.append(Y[0] + ly)
         for d in dist:
             lx, ly = self.get_euclidean_coordinates(212, d)
-            line_x.append(lx)
-            line_y.append(ly)
+            line_x.append(X[0] + lx)
+            line_y.append(Y[0] + ly)
         self.ax.plot(line_x, line_y)
 
         for cone in self.cones:
             x, y = self.get_euclidean_coordinates(cone[0], cone[1])
-            print("distance: ", cone[1], "labelclass: ", cone[3], "angle: ", cone[0])
+            # print("distance: ", cone[1], "labelclass: ", cone[3], "angle: ", cone[0])
             X.append(x)
             Y.append(y)
             confidence.append(cone[2])
@@ -103,11 +127,11 @@ class ConeLocalizationNode(Node):
             end += offset
             shift = difference * 1 / 6
 
-            cone_distances = self.lidar_cache[self.lidar_cache_current][round(start + shift):round(end - shift)]
+            cone_distances = self.lidar_data[round(start + shift):round(end - shift)]
             cone_distances = list(filter(lambda x: 0 < x < 2.5, cone_distances))
 
-            self.get_logger().info(f"The cone with color {cone[5]} started with {cone[0]} and ended with {cone[2]}")
-            print(cone_distances)
+            # self.get_logger().info(f"The cone with color {cone[5]} started with {cone[0]} and ended with {cone[2]}")
+            # print(cone_distances)
             if len(cone_distances) < 2:
                 continue
             else:
@@ -119,7 +143,7 @@ class ConeLocalizationNode(Node):
 
     def received_lidar_data(self, data):
 
-        self.get_logger().info("new lidar data")
+        # self.get_logger().info("new lidar data")
         lidar_data = np.asarray(data.ranges[::-1])
         self.lidar_cache_current = (self.lidar_cache_current + 1) % self.lidar_cache_target
         if self.lidar_cache_size < self.lidar_cache_target:
@@ -129,11 +153,10 @@ class ConeLocalizationNode(Node):
         else:
             self.lidar_cache[self.lidar_cache_current] = lidar_data
 
-        self.draw_callback(0)
-
     def odometry_callback(self, msg):
+        self.get_logger().info("new odometry data")
         p = np.asarray([msg.pose.pose.position.x, msg.pose.pose.position.y])
-        print(f'x:{p[0]}, y:{p[1]}')
+        # print(f'x:{p[0]}, y:{p[1]}')
 
 
 

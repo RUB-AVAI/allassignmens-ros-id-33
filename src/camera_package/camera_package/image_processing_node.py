@@ -31,7 +31,7 @@ class ImageProcessingNode(Node):
 
         self.inpret = yolov5.models.common.DetectMultiBackend(self.PATH_TO_MODEL, data=self.PATH_TO_LABELS)
         self.inpret = yolov5.models.common.AutoShape(self.inpret)
-
+        self.inpret = self.inpret.to(torch.device(0))
 
        # self.tflitemodel = "weights/best-int8 (2).tflite"
        # self.interpreter = tflite.Interpreter(self.tflitemodel, experimental_delegates=[tflite.load_delegate('libedgetpu.so.1')])
@@ -45,9 +45,8 @@ class ImageProcessingNode(Node):
         x_scale = new_size[0] / frame.shape[0]
         y_scale = new_size[1] / frame.shape[1]
         frame = cv2.resize(frame, dsize=new_size, fx=x_scale, fy=y_scale)
-
+        st = time.time()
         cvtFrame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-
         output = self.inpret(cvtFrame)
         output.render()
         print(data.header)
@@ -63,7 +62,7 @@ class ImageProcessingNode(Node):
             npmsg.data.append(npflat[i])
         self.publisher_labels.publish(npmsg)
         frame = cv2.cvtColor(cvtFrame, cv2.COLOR_BGR2RGB)
-        # print((time.time() - start) * 1000)
+        print((time.time() - st) * 1000)
         self.publisher_.publish(self.bridge.cv2_to_imgmsg(frame))
         self.get_logger().info('processed image ->')
 

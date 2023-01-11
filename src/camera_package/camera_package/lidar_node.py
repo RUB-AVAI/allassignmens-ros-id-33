@@ -23,7 +23,7 @@ class Lidar_node(Node):
         self.laserProcessed.publish(msg)
 
     def lidar_callback(self, msg):
-        #self.get_logger().info('-> %s' % msg.ranges)
+        self.get_logger().info('-> %s' % msg.ranges)
         message = Float32MultiArray()
         self.ranges = []
         for range in msg.ranges:

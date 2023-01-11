@@ -27,9 +27,9 @@ class CameraNode(Node):
         self.timer.cancel() # to start with 0Hz
 
     def capture_image_callback(self):
-        #ret, frame = self.cap.read()
-        ret = True
-        frame = self.cap
+        ret, frame = self.cap.read()
+        #ret = True
+        #frame = self.cap
         if ret:
             imgmsg = self.bridge.cv2_to_imgmsg(frame)
             t = builtin_interfaces.msg.Time()

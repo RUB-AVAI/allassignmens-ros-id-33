@@ -7,7 +7,8 @@ from rclpy.node import Node
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 import torch
-from std_msgs.msg import Float32MultiArray
+from std_msgs.msg import Float32MultiArray, Header
+from avai_messages.msg import Cones
 
 
 class ImageProcessingNode(Node):
@@ -21,7 +22,7 @@ class ImageProcessingNode(Node):
         super().__init__('image_processing_node')
         self.bridge = CvBridge()
         self.publisher_ = self.create_publisher(Image, '/images/processed', 10)
-        self.publisher_labels = self.create_publisher(Float32MultiArray, '/images/labels', 10)
+        self.publisher_labels = self.create_publisher(Cones, '/images/labels', 10)
         self.subscription_ = self.create_subscription(Image, '/images/raw', self.process_image_callback, 10)
 
     def process_image_callback(self, data):
@@ -34,18 +35,21 @@ class ImageProcessingNode(Node):
         y_scale = new_size[1] / frame.shape[1]
         frame = cv2.resize(frame, dsize=new_size, fx=x_scale, fy=y_scale)
 
+        #labeling
         cvtFrame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         output = self.model(cvtFrame)
         output.render()
-        print(data.header)
+
+        #converting output_array to flat array
         npOut = output.pandas().xyxy[0].to_numpy()
+        cone_msg = Cones()
         npflat = npOut[:, :npOut.shape[1] - 1].flatten()
-        npmsg = Float32MultiArray()
-        npmsg.data.append(float(data.header.stamp.sec))
-        npmsg.data.append(float(data.header.stamp.nanosec))
         for i in range(len(npflat)):
-            npmsg.data.append(npflat[i])
-        self.publisher_labels.publish(npmsg)
+            cone_msg.cones.append(npflat[i])
+
+        #copying the dataheader for cone_msg header
+        cone_msg.header = data.header
+        self.publisher_labels.publish(cone_msg)
         frame = cv2.cvtColor(cvtFrame, cv2.COLOR_BGR2RGB)
         # print((time.time() - start) * 1000)
         self.publisher_.publish(self.bridge.cv2_to_imgmsg(frame))

@@ -29,7 +29,7 @@ class ConeLocalizationNode(Node):
 
         self.laserfilt = message_filters.Subscriber(self, LaserScan, '/scan', qos_profile=qos_profile_sensor_data)
         self.odomfilt = message_filters.Subscriber(self, Odometry, '/odom')
-        self.labelfilt = message_filters.Subscriber(self, Cones , '/images/labels')
+        self.labelfilt = message_filters.Subscriber(self, Cones, '/images/labels')
 
         self.draw_synchronizer = message_filters.ApproximateTimeSynchronizer([self.laserfilt, self.odomfilt], queue_size=25, slop=.2)
         self.draw_synchronizer.registerCallback(self.synchronized_callback)

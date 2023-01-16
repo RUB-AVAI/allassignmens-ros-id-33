@@ -25,10 +25,6 @@ class ConeLocalizationNode(Node):
         self.count_for_DBSCAN = 0
         self.RATE_OF_DBSCAN = 5
 
-        # self.labelsub = self.create_subscription(Float32MultiArray, '/images/labels', self.received_labels, 10)
-        # self.lasersub = self.create_subscription(LaserScan, '/scan', self.received_lidar_data, qos_profile=qos_profile_sensor_data)
-        # self.odometrysub = self.create_subscription(Odometry, '/odom', self.odometry_callback, 10)
-        # self.graphsub = self.create_subscription(Bool, '/lidar/graph', self.draw_callback, 10)
         self.fig, self.ax = plt.subplots()
 
         self.laserfilt = message_filters.Subscriber(self, LaserScan, '/scan', qos_profile=qos_profile_sensor_data)
@@ -45,7 +41,7 @@ class ConeLocalizationNode(Node):
 
     def fusion_callback(self, laser, odom, labels):
 
-        self.get_logger().info("Start fusion")
+        self.get_logger().info("Start sensor fusion")
         lidar_data = np.asarray(laser.ranges[::-1])
         position = np.asarray([odom.pose.pose.position.x, odom.pose.pose.position.y])
         cone_labels = labels.cones
@@ -55,19 +51,19 @@ class ConeLocalizationNode(Node):
             self.cones.append(cone)
 
         self.count_for_DBSCAN += 1
-        if self.count_for_DBSCAN % self.RATE_OF_DBSCAN:
+        if self.count_for_DBSCAN == self.RATE_OF_DBSCAN:
             self.use_dbscan()
-
-        # self.draw_callback(0)
+            self.count_for_DBSCAN = 0 # To prevent overflow
 
     def use_dbscan(self):
 
         #clustering over x, y, color
         x_train = [c[0] + c[1] + c[3] for c in self.cones]
 
+
         # variables
-        _eps = 4
-        _min_samples = 2
+        _eps = .5 # max distance to be considered in neighborhood
+        _min_samples = 3
 
         dbscan = DBSCAN(eps=_eps, min_samples=_min_samples).fit(x_train)
         cluster_labels = dbscan.labels_
@@ -99,17 +95,21 @@ class ConeLocalizationNode(Node):
         lidar_data = np.asarray(laser.ranges[::-1])
         position = np.asarray([odom.pose.pose.position.x, odom.pose.pose.position.y])
 
-        self.lidar_data = lidar_data
         self.position = position
-        self.draw_callback(0)
+        for idx, point in enumerate(lidar_data):
+            lidar_data[idx] = point + self.position
+        self.lidar_data = lidar_data
 
-    def draw_callback(self, data):
+        self.draw()
+
+    def draw(self):
+        """
+        Plots the current situation with matplotlib
+        """
         # draw robot in the middle
         self.ax.cla()
         X = [self.position[0]]
         Y = [self.position[1]]
-        X = [0]
-        Y = [0]
         colors = ['black']
         confidence = [1.]
 
@@ -133,10 +133,10 @@ class ConeLocalizationNode(Node):
             lx, ly = self.get_euclidean_coordinates(212, d)
             line_x.append(X[0] + lx)
             line_y.append(Y[0] + ly)
+
         self.ax.plot(line_x, line_y)
 
         for cone in self.cones:
-            # x, y = self.get_euclidean_coordinates(cone[0], cone[1])
             x, y = cone[0], cone[1]
             # print("distance: ", cone[1], "labelclass: ", cone[3], "angle: ", cone[0])
             X.append(x)
@@ -149,23 +149,32 @@ class ConeLocalizationNode(Node):
             elif cone[3] == 2:
                 colors.append('yellow')
             else:
-                colors.append('red')
+                colors.append('red') # error case
 
         self.ax.scatter(X, Y, color=colors, alpha=confidence)
         plt.pause(.1)
 
     @staticmethod
     def get_euclidean_coordinates(angle, distance):
+        """
+        Calculates the euclidean coordinates from (0,0) for given angle (in degree) and distance
+        :param angle:
+        :param distance:
+        :return:
+        """
         rad = angle * (np.pi / 180)
         x = distance * np.cos(rad)
         y = distance * np.sin(-rad)
         return x, y
 
     def received_labels(self, labels, lidar_data, position):
-        # TODO: cache labels
-        # TODO: match labels with lidar data
+        # could be static method
+        """
+        Returns array of the cones for the received labels in the following form:
+        [x, y, confidence, label]
 
-
+        Note that x and y are the absolute position in the room
+        """
         labels = labels.reshape(int(len(labels) / 6), 6)
         # x1, y1, x2, y2, conf, label
 
@@ -189,28 +198,10 @@ class ConeLocalizationNode(Node):
                 distance = np.median(cone_distances)
                 angle = (start + end) / 2.
                 x, y = self.get_euclidean_coordinates(angle, distance)
-                # angle, distance, conf, label
                 x += position[0]
                 y += position[1]
-                received_cones.append([angle, distance, cone[4], cone[5]])
+                received_cones.append([x, y, cone[4], cone[5]])
         return received_cones
-
-    def received_lidar_data(self, data):
-
-        # self.get_logger().info("new lidar data")
-        lidar_data = np.asarray(data.ranges[::-1])
-        self.lidar_cache_current = (self.lidar_cache_current + 1) % self.lidar_cache_target
-        if self.lidar_cache_size < self.lidar_cache_target:
-            self.lidar_cache.append(lidar_data)
-            self.lidar_cache_size += 1
-
-        else:
-            self.lidar_cache[self.lidar_cache_current] = lidar_data
-
-    def odometry_callback(self, msg):
-        self.get_logger().info("new odometry data")
-        p = np.asarray([msg.pose.pose.position.x, msg.pose.pose.position.y])
-        # print(f'x:{p[0]}, y:{p[1]}')
 
     @staticmethod
     def calculate_lidar_range(cone):

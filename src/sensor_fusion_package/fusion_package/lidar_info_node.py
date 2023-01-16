@@ -7,8 +7,6 @@ from avai_messages.msg import Cones
 
 class Lidar_info_node(Node):
 
-
-
     def __init__(self):
         super().__init__('sensor_fusion_node')
         self.distances = []

@@ -75,7 +75,7 @@ class ConeLocalizationNode(Node):
 
         # every label only once in the set(cluster_labels) to get the amount of different cones we clustered
         amount_cones = len(set(cluster_labels))
-        clustered_cones = [None]*amount_cones
+        clustered_cones = [[]]*amount_cones
         for elem in DBSCAN_dataset:
             clustered_cones[elem[-1] + 1].append(elem[0:3])
 

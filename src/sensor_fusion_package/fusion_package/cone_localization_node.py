@@ -16,6 +16,8 @@ class ConeLocalizationNode(Node):
     def __init__(self):
         super().__init__('cone_localization_node')
 
+        # TODO: also cache labels and odometry data with timestamps
+
         self.cones = []
         self.lidar_data = []
         self.position = []
@@ -56,8 +58,8 @@ class ConeLocalizationNode(Node):
     def use_dbscan(self):
 
         #clustering over x, y, color
-        # TODO: Check whether values are saved correctly for clustering!
         x_train = [c[0] + c[1] + c[3] for c in self.cones]
+
 
         # variables
         _eps = .5 # max distance to be considered in neighborhood
@@ -69,26 +71,18 @@ class ConeLocalizationNode(Node):
         # in cluster_lables sind die entsprechenden Labels für jeden Eintrag --> neuer Wert --> neues Hütchen
 
         DBSCAN_dataset = self.cones.copy()
-        # using np.concatenate method, because faster
-        # TODO: Check concatenation!
-        DBSCAN_dataset = np.concatenate((DBSCAN_dataset, cluster_labels[:, np.newaxis]), axis=1)
+        DBSCAN_dataset = [DBSCAN_dataset[i] + cluster_labels[i] for i in range(len(DBSCAN_dataset))]
 
         # every label only once in the set(cluster_labels) to get the amount of different cones we clustered
-        unique_cone_labels = set(cluster_labels)
-        # creating dictionary with keys as labels and values as lists of cones
-        clustered_cones = dict([(label, []) for label in unique_cone_labels])
+        amount_cones = len(set(cluster_labels))
+        clustered_cones = [[]]*amount_cones
         for elem in DBSCAN_dataset:
-            # elem[-1] is the label (see concatenation of DBSCAN_dataset)
-            # elem[0:3] are x, y and cone color respectively
-            clustered_cones[elem[-1]].append(elem[0:3])
+            clustered_cones[elem[-1] + 1].append(elem[0:3])
 
         # clustered_cones enthält jetzt für jedes clustered cone eine Liste an Positionen. clustered[0] =  "outliers"
         new_cone_representation = []
-        for label, cone in clustered_cones:
-            # avoiding cones with label == -1 as noise
-            # question: do we have to check len(cone) as len(cone) == 0 is actually impossible (if cone doesn't have
-            # label then it is noise and has label -1 => all len(cones) are > 0).
-            if len(cone) > 0 and label != -1:
+        for cone in clustered_cones:
+            if len(cone) > 0:
                 x_coordinates = [row[0] for row in cone]
                 y_coordinates = [row[1] for row in cone]
                 x_mean = np.mean(x_coordinates)
@@ -161,7 +155,7 @@ class ConeLocalizationNode(Node):
         plt.pause(.1)
 
     @staticmethod
-    def get_euclidean_coordinates(angle, distance) -> tuple:
+    def get_euclidean_coordinates(angle, distance):
         """
         Calculates the euclidean coordinates from (0,0) for given angle (in degree) and distance
         :param angle:
@@ -173,7 +167,7 @@ class ConeLocalizationNode(Node):
         y = distance * np.sin(-rad)
         return x, y
 
-    def received_labels(self, labels, lidar_data, position) -> list:
+    def received_labels(self, labels, lidar_data, position):
         # could be static method
         """
         Returns array of the cones for the received labels in the following form:
@@ -210,7 +204,7 @@ class ConeLocalizationNode(Node):
         return received_cones
 
     @staticmethod
-    def calculate_lidar_range(cone) -> tuple:
+    def calculate_lidar_range(cone):
         fov = 64
         left = 180 - (fov / 2)
         n_pixels = 640

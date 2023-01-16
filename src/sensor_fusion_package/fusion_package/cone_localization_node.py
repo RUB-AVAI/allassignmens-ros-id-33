@@ -48,40 +48,11 @@ class ConeLocalizationNode(Node):
         self.get_logger().info("Start fusion")
         lidar_data = np.asarray(laser.ranges[::-1])
         position = np.asarray([odom.pose.pose.position.x, odom.pose.pose.position.y])
-        raw_data = labels.cones
-        received = np.asarray(raw_data)
-        received = received.reshape(int(len(received) / 6), 6)
-        # x1, y1, x2, y2, conf, label
+        cone_labels = labels.cones
 
-        received_cones = []
-        for cone in received:
-            start, end = self.calculate_lidar_range(cone)
-            difference = end - start
-            offset = 3.5
-            start += offset
-            end += offset
-            shift = difference * 1 / 6
-
-            cone_distances = self.lidar_data[round(start + shift):round(end - shift)]
-            cone_distances = list(filter(lambda x: 0 < x < 2.5, cone_distances))
-
-            # self.get_logger().info(f"The cone with color {cone[5]} started with {cone[0]} and ended with {cone[2]}")
-            # print(cone_distances)
-            if len(cone_distances) < 2:
-                continue
-            else:
-                distance = np.median(cone_distances)
-                angle = (start + end) / 2.
-                # angle, distance, conf, label
-                received_cones.append([angle, distance, cone[4], cone[5]])
-
-        received_cones_coordinates = []
-        for angle, distance, c4, c5 in enumerate(received_cones):
-            x, y = self.get_euclidean_coordinates(angle, distance)
-            x += position[0]
-            y += position[1]
-            received_cones_coordinates.append([x, y, c4, c5])
-        self.cones.append(received_cones_coordinates)
+        cones = self.received_labels(cone_labels, lidar_data, position)
+        for cone in cones:
+            self.cones.append(cone)
 
         self.count_for_DBSCAN += 1
         if self.count_for_DBSCAN % self.RATE_OF_DBSCAN:
@@ -190,19 +161,16 @@ class ConeLocalizationNode(Node):
         y = distance * np.sin(-rad)
         return x, y
 
-    def received_labels(self, data):
+    def received_labels(self, labels, lidar_data, position):
         # TODO: cache labels
         # TODO: match labels with lidar data
-        self.draw_callback(None)
-        timestamp_sec = data.data[0]
-        timestamp_ns = data.data[1]
-        data.data = data.data[2:len(data.data)]
-        received = np.asarray(data.data)
-        received = received.reshape(int(len(received) / 6), 6)
+
+
+        labels = labels.reshape(int(len(labels) / 6), 6)
         # x1, y1, x2, y2, conf, label
 
         received_cones = []
-        for cone in received:
+        for cone in labels:
             start, end = self.calculate_lidar_range(cone)
             difference = end - start
             offset = 3.5
@@ -210,7 +178,7 @@ class ConeLocalizationNode(Node):
             end += offset
             shift = difference * 1 / 6
 
-            cone_distances = self.lidar_data[round(start + shift):round(end - shift)]
+            cone_distances = lidar_data[round(start + shift):round(end - shift)]
             cone_distances = list(filter(lambda x: 0 < x < 2.5, cone_distances))
 
             # self.get_logger().info(f"The cone with color {cone[5]} started with {cone[0]} and ended with {cone[2]}")
@@ -222,8 +190,10 @@ class ConeLocalizationNode(Node):
                 angle = (start + end) / 2.
                 x, y = self.get_euclidean_coordinates(angle, distance)
                 # angle, distance, conf, label
+                x += position[0]
+                y += position[1]
                 received_cones.append([angle, distance, cone[4], cone[5]])
-        self.cones = received_cones
+        return received_cones
 
     def received_lidar_data(self, data):
 

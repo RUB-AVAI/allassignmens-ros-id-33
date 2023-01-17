@@ -59,10 +59,14 @@ class ConeLocalizationNode(Node):
         self.count_for_DBSCAN += 1
         if self.count_for_DBSCAN == self.RATE_OF_DBSCAN:
             self.get_logger().info("using DBSCAN")
-            clustered_cones = self.use_dbscan(None)
+            # cluster new cones and append them to cones_clustered
+            clustered_cones = self.use_dbscan(self.cones_new)
             for c in clustered_cones:
                 self.cones_clustered.append(c)
             self.cones_new = []
+
+            #cluster already clustered cones
+            self.cones_clustered = self.use_dbscan(self.cones_clustered, 1)
             self.count_for_DBSCAN = 0  # To prevent overflow
 
     def use_dbscan(self, data_set, _min_samples = 2):
@@ -81,7 +85,7 @@ class ConeLocalizationNode(Node):
 
         # in cluster_lables sind die entsprechenden Labels für jeden Eintrag --> neuer Wert --> neues Hütchen
 
-        DBSCAN_dataset = self.cones_new.copy()
+        DBSCAN_dataset = data_set.copy()
         # using np.concatenate method, because faster
         # TODO: Check concatenation!
         DBSCAN_dataset = np.concatenate((DBSCAN_dataset, cluster_labels[:, np.newaxis]), axis=1)
@@ -121,8 +125,6 @@ class ConeLocalizationNode(Node):
                 y_mean = np.mean(y_coordinates)
                 cone_color = cluster[0][3]
                 new_cone_representation.append([x_mean, y_mean, 1, cone_color])
-        for new_cone in new_cone_representation:
-            self.cones_clustered.append(new_cone)
         return new_cone_representation
 
 

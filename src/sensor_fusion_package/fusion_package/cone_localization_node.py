@@ -16,9 +16,11 @@ class ConeLocalizationNode(Node):
     def __init__(self):
         super().__init__('cone_localization_node')
 
-        self.cones = []
+        self.cones_new = []
+        self.cones_clustered = []
         self.lidar_data = []
-        self.position = []
+        self.startup_position = []
+        self.relative_position = [None, None]
 
         self.count_for_DBSCAN = 0
         self.RATE_OF_DBSCAN = 5
@@ -34,7 +36,7 @@ class ConeLocalizationNode(Node):
         self.draw_synchronizer.registerCallback(self.synchronized_callback)
 
         self.cone_synchronizer = message_filters.ApproximateTimeSynchronizer(
-            [self.laserfilt, self.odomfilt, self.labelfilt], queue_size=1000, slop=.5)
+            [self.laserfilt, self.odomfilt, self.labelfilt], queue_size=100, slop=.15)
         self.cone_synchronizer.registerCallback(self.fusion_callback)
 
     def fusion_callback(self, laser, odom, labels):
@@ -42,37 +44,60 @@ class ConeLocalizationNode(Node):
         self.get_logger().info("Start sensor fusion")
         lidar_data = np.asarray(laser.ranges[::-1])
         position = np.asarray([odom.pose.pose.position.x, odom.pose.pose.position.y])
+
+        if len(self.startup_position) == 0:
+            self.startup_position = position
+        self.relative_position[0] = self.startup_position[0] - position[0]
+        self.relative_position[1] = self.startup_position[1] - position[1]
+
         cone_labels = labels.cones
 
         cones = self.received_labels(cone_labels, lidar_data, position)
         for cone in cones:
-            self.cones.append(cone)
+            self.cones_new.append(cone)
 
         self.count_for_DBSCAN += 1
         if self.count_for_DBSCAN == self.RATE_OF_DBSCAN:
-            self.use_dbscan()
-            self.count_for_DBSCAN = 0 # To prevent overflow
+            self.get_logger().info("using DBSCAN")
+            clustered_cones = self.use_dbscan(None)
+            for c in clustered_cones:
+                self.cones_clustered.append(c)
+            self.cones_new = []
+            self.count_for_DBSCAN = 0  # To prevent overflow
 
-    def use_dbscan(self):
+    def use_dbscan(self, data_set, _min_samples = 2):
 
-        #clustering over x, y, color
+        # clustering over x, y, color
         # TODO: Check whether values are saved correctly for clustering!
-        x_train = [c[0] + c[1] + c[3] for c in self.cones]
+        x_train = []
+        for c in data_set:
+            x_train.append([c[0], c[1], c[3]])
 
         # variables
-        _eps = .5 # max distance to be considered in neighborhood
-        _min_samples = 3
-
+        _eps = .5  # max distance to be considered in neighborhood
         dbscan = DBSCAN(eps=_eps, min_samples=_min_samples).fit(x_train)
+
         cluster_labels = dbscan.labels_
 
         # in cluster_lables sind die entsprechenden Labels für jeden Eintrag --> neuer Wert --> neues Hütchen
 
-        DBSCAN_dataset = self.cones.copy()
+        DBSCAN_dataset = self.cones_new.copy()
         # using np.concatenate method, because faster
         # TODO: Check concatenation!
         DBSCAN_dataset = np.concatenate((DBSCAN_dataset, cluster_labels[:, np.newaxis]), axis=1)
 
+        amount_cones = len(set(cluster_labels))
+        clustered_cones = [None] * amount_cones
+
+        for i in range(len(clustered_cones)):
+            clustered_cones[i] = []
+
+        for elem in DBSCAN_dataset:
+            if elem[4] != -1:
+                cone_tupel = [elem[0], elem[1], elem[2], elem[3]]
+
+                clustered_cones[int(elem[4])].append(cone_tupel)
+        """
         # every label only once in the set(cluster_labels) to get the amount of different cones we clustered
         unique_cone_labels = set(cluster_labels)
         # creating dictionary with keys as labels and values as lists of cones
@@ -81,31 +106,50 @@ class ConeLocalizationNode(Node):
             # elem[-1] is the label (see concatenation of DBSCAN_dataset)
             # elem[0:3] are x, y and cone color respectively
             clustered_cones[elem[-1]].append(elem[0:3])
+                """
 
         # clustered_cones enthält jetzt für jedes clustered cone eine Liste an Positionen. clustered[0] =  "outliers"
         new_cone_representation = []
-        for label, cone in clustered_cones:
+        for cluster in clustered_cones:
             # avoiding cones with label == -1 as noise
             # question: do we have to check len(cone) as len(cone) == 0 is actually impossible (if cone doesn't have
             # label then it is noise and has label -1 => all len(cones) are > 0).
-            if len(cone) > 0 and label != -1:
-                x_coordinates = [row[0] for row in cone]
-                y_coordinates = [row[1] for row in cone]
+            if len(cluster) > 0:
+                x_coordinates = [row[0] for row in cluster]
+                y_coordinates = [row[1] for row in cluster]
                 x_mean = np.mean(x_coordinates)
                 y_mean = np.mean(y_coordinates)
-                cone_color = cone[0][3]
+                cone_color = cluster[0][3]
                 new_cone_representation.append([x_mean, y_mean, 1, cone_color])
-        self.cones = new_cone_representation
+        for new_cone in new_cone_representation:
+            self.cones_clustered.append(new_cone)
+        return new_cone_representation
+
 
     def synchronized_callback(self, laser, odom):
         lidar_data = np.asarray(laser.ranges[::-1])
-        position = np.asarray([odom.pose.pose.position.x, odom.pose.pose.position.y])
+        position = [odom.pose.pose.position.x, odom.pose.pose.position.y]
 
-        self.position = position
+        if len(self.startup_position) == 0:
+            self.startup_position = position
+        self.relative_position[0] = self.startup_position[0] - position[0]
+        self.relative_position[1] = self.startup_position[1] - position[1]
+
+        l_data = []
+        for angle in range(len(lidar_data)):
+            distance = lidar_data[angle]
+            x, y = self.get_euclidean_coordinates(angle, distance)
+            x += self.relative_position[0]
+            y += self.relative_position[1]
+            l_data.append([x, y])
+
+        # print("l_data: ", l_data)
+        """
         for idx, point in enumerate(lidar_data):
             lidar_data[idx] = point + self.position
         self.lidar_data = lidar_data
-
+        """
+        self.lidar_data = l_data
         self.draw()
 
     def draw(self):
@@ -114,40 +158,43 @@ class ConeLocalizationNode(Node):
         """
         # draw robot in the middle
         self.ax.cla()
-        X = [self.position[0]]
-        Y = [self.position[1]]
-        colors = ['black']
-        confidence = [1.]
+        X = [self.relative_position[0]]
+        Y = [self.relative_position[1]]
+        self.ax.scatter(self.relative_position[0], self.relative_position[1], color='black', alpha=1)
 
         lidar_x = []
         lidar_y = []
-        for angle, distance in enumerate(self.lidar_data):
-            x, y = self.get_euclidean_coordinates(angle, distance)
-            lidar_x.append(x)
-            lidar_y.append(y)
+
+        for entry in self.lidar_data:
+            lidar_x.append(entry[0])
+            lidar_y.append(entry[1])
 
         self.ax.scatter(lidar_x, lidar_y, s=.4)
-
+        self.ax.set_ylim(np.min(lidar_y), np.max(lidar_y))
         line_x = []
         line_y = []
         dist = np.linspace(0, 2, 100)
+
         for d in dist:
             lx, ly = self.get_euclidean_coordinates(148, d)
-            line_x.append(X[0] + lx)
-            line_y.append(Y[0] + ly)
+            line_x.append(lx + X)
+            line_y.append(ly + Y)
+
         for d in dist:
             lx, ly = self.get_euclidean_coordinates(212, d)
-            line_x.append(X[0] + lx)
-            line_y.append(Y[0] + ly)
+            line_x.append(X + lx)
+            line_y.append(Y + ly)
 
-        self.ax.plot(line_x, line_y)
-
-        for cone in self.cones:
+        self.ax.plot(line_x, line_y, color='green')
+        x_cone = []
+        y_cone = []
+        colors = []
+        for cone in self.cones_clustered:
             x, y = cone[0], cone[1]
             # print("distance: ", cone[1], "labelclass: ", cone[3], "angle: ", cone[0])
-            X.append(x)
-            Y.append(y)
-            confidence.append(cone[2])
+            x_cone.append(x)
+            y_cone.append(y)
+
             if cone[3] == 0:
                 colors.append('blue')
             elif cone[3] == 1:
@@ -155,10 +202,10 @@ class ConeLocalizationNode(Node):
             elif cone[3] == 2:
                 colors.append('yellow')
             else:
-                colors.append('red') # error case
-
-        self.ax.scatter(X, Y, color=colors, alpha=confidence)
-        plt.pause(.1)
+                colors.append('red')  # error case
+        print(len(self.cones_clustered))
+        self.ax.scatter(x_cone, y_cone, color=colors)
+        plt.pause(.5)
 
     @staticmethod
     def get_euclidean_coordinates(angle, distance) -> tuple:
@@ -181,7 +228,7 @@ class ConeLocalizationNode(Node):
 
         Note that x and y are the absolute position in the room
         """
-        labels = labels.reshape(int(len(labels) / 6), 6)
+        labels = np.asarray(labels).reshape(int(len(labels) / 6), 6)
         # x1, y1, x2, y2, conf, label
 
         received_cones = []
@@ -204,8 +251,8 @@ class ConeLocalizationNode(Node):
                 distance = np.median(cone_distances)
                 angle = (start + end) / 2.
                 x, y = self.get_euclidean_coordinates(angle, distance)
-                x += position[0]
-                y += position[1]
+                x += self.startup_position[0] - position[0]
+                y += self.startup_position[1] - position[1]
                 received_cones.append([x, y, cone[4], cone[5]])
         return received_cones
 

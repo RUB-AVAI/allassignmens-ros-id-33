@@ -1,3 +1,4 @@
+import cv2
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray, Bool
@@ -9,6 +10,7 @@ from rclpy.qos import qos_profile_sensor_data, QoSProfile
 import message_filters
 from avai_messages.msg import Cones
 from sklearn.cluster import DBSCAN
+import tf_transformations
 
 
 class ConeLocalizationNode(Node):
@@ -20,7 +22,7 @@ class ConeLocalizationNode(Node):
         self.cones_clustered = []
         self.lidar_data = []
         self.startup_position = []
-        self.relative_position = [None, None]
+        self.relative_position = [None, None, None]
 
         self.count_for_DBSCAN = 0
         self.RATE_OF_DBSCAN = 5
@@ -43,12 +45,15 @@ class ConeLocalizationNode(Node):
 
         self.get_logger().info("Start sensor fusion")
         lidar_data = np.asarray(laser.ranges[::-1])
-        position = np.asarray([odom.pose.pose.position.x, odom.pose.pose.position.y])
+        r, p, y = tf_transformations.euler_from_quaternion([odom.pose.pose.orientation.x, odom.pose.pose.orientation.y, odom.pose.pose.orientation.z, odom.pose.pose.orientation.w])
+        print(r, p, y)
+        position = np.asarray([odom.pose.pose.position.x, odom.pose.pose.position.y, np.rad2deg(-y)])
 
         if len(self.startup_position) == 0:
             self.startup_position = position
         self.relative_position[0] = self.startup_position[0] - position[0]
         self.relative_position[1] = self.startup_position[1] - position[1]
+        self.relative_position[2] = (self.startup_position[2] + position[2]) % 360
 
         cone_labels = labels.cones
 
@@ -57,19 +62,24 @@ class ConeLocalizationNode(Node):
             self.cones_new.append(cone)
 
         self.count_for_DBSCAN += 1
+
         if self.count_for_DBSCAN == self.RATE_OF_DBSCAN:
             self.get_logger().info("using DBSCAN")
             # cluster new cones and append them to cones_clustered
-            clustered_cones = self.use_dbscan(self.cones_new)
-            for c in clustered_cones:
-                self.cones_clustered.append(c)
-            self.cones_new = []
 
-            #cluster already clustered cones
-            self.cones_clustered = self.use_dbscan(self.cones_clustered, 1)
+            if len(self.cones_new) > 0:
+                clustered_cones = self.use_dbscan(self.cones_new)
+                for c in clustered_cones:
+                    self.cones_clustered.append(c)
+                self.cones_new = []
+
+            # cluster already clustered cones
+            if len(self.cones_clustered) > 0:
+                self.cones_clustered = self.use_dbscan(self.cones_clustered, 1)
+                pass
             self.count_for_DBSCAN = 0  # To prevent overflow
 
-    def use_dbscan(self, data_set, _min_samples = 2):
+    def use_dbscan(self, data_set, _min_samples=2):
 
         # clustering over x, y, color
         # TODO: Check whether values are saved correctly for clustering!
@@ -127,20 +137,27 @@ class ConeLocalizationNode(Node):
                 new_cone_representation.append([x_mean, y_mean, 1, cone_color])
         return new_cone_representation
 
-
     def synchronized_callback(self, laser, odom):
         lidar_data = np.asarray(laser.ranges[::-1])
-        position = [odom.pose.pose.position.x, odom.pose.pose.position.y]
+        r, p, y = tf_transformations.euler_from_quaternion(
+            [odom.pose.pose.orientation.x, odom.pose.pose.orientation.y, odom.pose.pose.orientation.z,
+             odom.pose.pose.orientation.w])
+        position = [odom.pose.pose.position.x, odom.pose.pose.position.y, np.rad2deg(-y)]
 
         if len(self.startup_position) == 0:
             self.startup_position = position
+
         self.relative_position[0] = self.startup_position[0] - position[0]
         self.relative_position[1] = self.startup_position[1] - position[1]
+        self.relative_position[2] = (self.startup_position[2] + position[2]) % 360
+        # self.relative_position[2] = (odom.pose.pose.orientation.z + 1) * 180
 
         l_data = []
         for angle in range(len(lidar_data)):
             distance = lidar_data[angle]
+            delta_rotation = self.relative_position[2]
             x, y = self.get_euclidean_coordinates(angle, distance)
+
             x += self.relative_position[0]
             y += self.relative_position[1]
             l_data.append([x, y])
@@ -171,21 +188,23 @@ class ConeLocalizationNode(Node):
             lidar_x.append(entry[0])
             lidar_y.append(entry[1])
 
-        self.ax.scatter(lidar_x, lidar_y, s=.4)
-        self.ax.set_ylim(np.min(lidar_y), np.max(lidar_y))
+        #self.ax.scatter(lidar_x, lidar_y, s=.4)
+        # self.ax.set_ylim(np.min(lidar_y), np.max(lidar_y))
         line_x = []
         line_y = []
         dist = np.linspace(0, 2, 100)
 
+        orientation = self.relative_position[2]
+
         for d in dist:
-            lx, ly = self.get_euclidean_coordinates(148, d)
+            lx, ly = self.get_euclidean_coordinates((148 + orientation + 90) % 360, d)
             line_x.append(lx + X)
             line_y.append(ly + Y)
 
         for d in dist:
-            lx, ly = self.get_euclidean_coordinates(212, d)
-            line_x.append(X + lx)
-            line_y.append(Y + ly)
+            lx, ly = self.get_euclidean_coordinates((212 + orientation + 90) % 360, d)
+            line_x.append(lx + X)
+            line_y.append(ly + Y)
 
         self.ax.plot(line_x, line_y, color='green')
         x_cone = []
@@ -205,7 +224,7 @@ class ConeLocalizationNode(Node):
                 colors.append('yellow')
             else:
                 colors.append('red')  # error case
-        print(len(self.cones_clustered))
+        #print(len(self.cones_clustered))
         self.ax.scatter(x_cone, y_cone, color=colors)
         plt.pause(.5)
 
@@ -245,16 +264,17 @@ class ConeLocalizationNode(Node):
             cone_distances = lidar_data[round(start + shift):round(end - shift)]
             cone_distances = list(filter(lambda x: 0 < x < 2.5, cone_distances))
 
-            # self.get_logger().info(f"The cone with color {cone[5]} started with {cone[0]} and ended with {cone[2]}")
-            # print(cone_distances)
             if len(cone_distances) < 2:
                 continue
             else:
                 distance = np.median(cone_distances)
                 angle = (start + end) / 2.
                 x, y = self.get_euclidean_coordinates(angle, distance)
-                x += self.startup_position[0] - position[0]
-                y += self.startup_position[1] - position[1]
+                delta_rotation = -self.startup_position[2] + position[2]
+                x = np.cos(delta_rotation)*x - np.sin(delta_rotation)*y
+                y = np.sin(delta_rotation)*x + np.cos(delta_rotation)*y
+                x += self.startup_position[0] + position[0]
+                y += self.startup_position[1] + position[1]
                 received_cones.append([x, y, cone[4], cone[5]])
         return received_cones
 

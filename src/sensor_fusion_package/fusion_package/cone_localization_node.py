@@ -85,16 +85,16 @@ class ConeLocalizationNode(Node):
                 pass
             self.count_for_DBSCAN = 0  # To prevent overflow
 
-    def use_dbscan(self, data_set, _min_samples=2):
-
+    def use_dbscan(self, data_set, _min_samples=2, _eps=.5):
         # clustering over x, y, color
         # TODO: Check whether values are saved correctly for clustering!
         x_train = []
+        # We set the z coordinate of the cones points in DBSCAN as DIGIT_FOR_COLOR * (_eps + 1)
+        # to prevent clustering cones of different color to one.
+        # See report of assignment 7 for detailed explanation.
         for c in data_set:
-            x_train.append([c[0], c[1], c[3]])
+            x_train.append([c[0], c[1], c[3] * (_eps + 1)])
 
-        # variables
-        _eps = .5  # max distance to be considered in neighborhood
         dbscan = DBSCAN(eps=_eps, min_samples=_min_samples).fit(x_train)
 
         cluster_labels = dbscan.labels_

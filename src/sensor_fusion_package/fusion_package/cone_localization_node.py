@@ -23,6 +23,7 @@ class ConeLocalizationNode(Node):
         self.lidar_data = []
         self.startup_position = []
         self.relative_position = []
+        self.sign = -1
 
         self.count_for_DBSCAN = 0
         self.RATE_OF_DBSCAN = 5
@@ -51,7 +52,7 @@ class ConeLocalizationNode(Node):
         if len(self.startup_position) == 0:
             self.startup_position = position
 
-        rel_pos = [position[0] - self.startup_position[0], position[1] - self.startup_position[1],
+        rel_pos = [self.sign*(position[0] - self.startup_position[0]), self.sign*(position[1] - self.startup_position[1]),
                    (self.startup_position[2] - position[2]) % 360]
         self.relative_position = rel_pos
         cone_labels = labels.cones
@@ -71,14 +72,14 @@ class ConeLocalizationNode(Node):
                 for c in clustered_cones:
                     self.cones_clustered.append(c)
                 self.cones_new = []
-
             # cluster already clustered cones
             if len(self.cones_clustered) > 0:
                 self.cones_clustered = self.use_dbscan(self.cones_clustered, 1)
                 pass
             self.count_for_DBSCAN = 0  # To prevent overflow
 
-    def use_dbscan(self, data_set, _min_samples=2, _eps=.14):
+
+    def use_dbscan(self, data_set, _min_samples=2, _eps=.1):
         # clustering over x, y, color
         # TODO: Check whether values are saved correctly for clustering!
         x_train = []
@@ -108,7 +109,7 @@ class ConeLocalizationNode(Node):
         for elem in DBSCAN_dataset:
             if elem[4] != -1:
                 cone_tupel = [elem[0], elem[1], elem[2], elem[3]]
-
+                clustered_cones[int(elem[4])].append(cone_tupel)
 
         new_cone_representation = []
         for cluster in clustered_cones:
@@ -132,8 +133,8 @@ class ConeLocalizationNode(Node):
             self.startup_position = position
 
         rel_pos = []
-        rel_pos.append(position[0] - self.startup_position[0])
-        rel_pos.append(position[1] - self.startup_position[1])
+        rel_pos.append(self.sign*(position[0] - self.startup_position[0]))
+        rel_pos.append(self.sign*(position[1] - self.startup_position[1]))
         rel_pos.append((self.startup_position[2] - position[2]) % 360)
         self.relative_position = rel_pos
         l_data = []
@@ -186,23 +187,26 @@ class ConeLocalizationNode(Node):
             line_y.append(ly + Y)
 
         self.ax.plot(line_x, line_y, color='green')
+        x_cone_clustered = []
+        y_cone_clustered = []
+        colors_clustered = []
+        for cone in self.cones_clustered:
+            x, y = cone[0], cone[1]
+            x_cone_clustered.append(x)
+            y_cone_clustered.append(y)
+
+            if cone[3] == 0:
+                colors_clustered.append('blue')
+            elif cone[3] == 1:
+                colors_clustered.append('orange')
+            elif cone[3] == 2:
+                colors_clustered.append('yellow')
+            else:
+                colors_clustered.append('red')  # error case
+
         x_cone = []
         y_cone = []
         colors = []
-        for cone in self.cones_clustered:
-            x, y = cone[0], cone[1]
-            x_cone.append(x)
-            y_cone.append(y)
-
-            if cone[3] == 0:
-                colors.append('blue')
-            elif cone[3] == 1:
-                colors.append('orange')
-            elif cone[3] == 2:
-                colors.append('yellow')
-            else:
-                colors.append('red')  # error case
-
         for cone in self.cones_new:
             x, y = cone[0], cone[1]
             x_cone.append(x)
@@ -216,7 +220,8 @@ class ConeLocalizationNode(Node):
                 colors.append('yellow')
             else:
                 colors.append('red')  # error case
-        self.ax.scatter(x_cone, y_cone, color=colors)
+        self.ax.scatter(x_cone, y_cone, color=colors, alpha=.3)
+        self.ax.scatter(x_cone_clustered, y_cone_clustered, color=colors_clustered, marker="x")
         plt.pause(.5)
 
     @staticmethod

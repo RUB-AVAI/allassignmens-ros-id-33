@@ -48,18 +48,11 @@ class ConeLocalizationNode(Node):
         r, p, y = tf_transformations.euler_from_quaternion([odom.pose.pose.orientation.x, odom.pose.pose.orientation.y, odom.pose.pose.orientation.z, odom.pose.pose.orientation.w])
 
         position = np.asarray([odom.pose.pose.position.x, odom.pose.pose.position.y, np.rad2deg(-y)])
-        #print("x: ", position[0], "y: ", position[1])
-
         if len(self.startup_position) == 0:
             self.startup_position = position
 
-        rel_pos = []
-        rel_pos.append(position[0] - self.startup_position[0])
-        rel_pos.append(position[1] - self.startup_position[1])
-        rel_pos.append((self.startup_position[2] - position[2]) % 360)
-        # self.relative_position[0] = self.startup_position[0] - position[0]
-        # self.relative_position[1] = self.startup_position[1] - position[1]
-        # self.relative_position[2] = (self.startup_position[2] + position[2]) % 360
+        rel_pos = [position[0] - self.startup_position[0], position[1] - self.startup_position[1],
+                   (self.startup_position[2] - position[2]) % 360]
         self.relative_position = rel_pos
         cone_labels = labels.cones
 
@@ -85,7 +78,7 @@ class ConeLocalizationNode(Node):
                 pass
             self.count_for_DBSCAN = 0  # To prevent overflow
 
-    def use_dbscan(self, data_set, _min_samples=2, _eps=.5):
+    def use_dbscan(self, data_set, _min_samples=2, _eps=.14):
         # clustering over x, y, color
         # TODO: Check whether values are saved correctly for clustering!
         x_train = []
@@ -116,24 +109,9 @@ class ConeLocalizationNode(Node):
             if elem[4] != -1:
                 cone_tupel = [elem[0], elem[1], elem[2], elem[3]]
 
-                clustered_cones[int(elem[4])].append(cone_tupel)
-        """
-        # every label only once in the set(cluster_labels) to get the amount of different cones we clustered
-        unique_cone_labels = set(cluster_labels)
-        # creating dictionary with keys as labels and values as lists of cones
-        clustered_cones = dict([(label, []) for label in unique_cone_labels])
-        for elem in DBSCAN_dataset:
-            # elem[-1] is the label (see concatenation of DBSCAN_dataset)
-            # elem[0:3] are x, y and cone color respectively
-            clustered_cones[elem[-1]].append(elem[0:3])
-                """
 
-        # clustered_cones enthält jetzt für jedes clustered cone eine Liste an Positionen. clustered[0] =  "outliers"
         new_cone_representation = []
         for cluster in clustered_cones:
-            # avoiding cones with label == -1 as noise
-            # question: do we have to check len(cone) as len(cone) == 0 is actually impossible (if cone doesn't have
-            # label then it is noise and has label -1 => all len(cones) are > 0).
             if len(cluster) > 0:
                 x_coordinates = [row[0] for row in cluster]
                 y_coordinates = [row[1] for row in cluster]
@@ -158,11 +136,6 @@ class ConeLocalizationNode(Node):
         rel_pos.append(position[1] - self.startup_position[1])
         rel_pos.append((self.startup_position[2] - position[2]) % 360)
         self.relative_position = rel_pos
-        # self.relative_position[0] = self.startup_position[0] - position[0]
-        # self.relative_position[1] = self.startup_position[1] - position[1]
-        # self.relative_position[2] = (self.startup_position[2] + position[2]) % 360
-        # self.relative_position[2] = (odom.pose.pose.orientation.z + 1) * 180
-
         l_data = []
         for angle in range(len(lidar_data)):
             distance = lidar_data[angle]
@@ -173,12 +146,6 @@ class ConeLocalizationNode(Node):
             y += self.relative_position[1]
             l_data.append([x, y])
 
-        # print("l_data: ", l_data)
-        """
-        for idx, point in enumerate(lidar_data):
-            lidar_data[idx] = point + self.position
-        self.lidar_data = lidar_data
-        """
         self.lidar_data = l_data
         self.draw()
 
@@ -190,7 +157,6 @@ class ConeLocalizationNode(Node):
         self.ax.cla()
         X = [self.relative_position[0]]
         Y = [self.relative_position[1]]
-        #print("x_pos:", self.relative_position[0], "y_pos: ", self.relative_position[1])
         self.ax.scatter(self.relative_position[0], self.relative_position[1], color='black', alpha=1)
 
         lidar_x = []
@@ -201,7 +167,6 @@ class ConeLocalizationNode(Node):
             lidar_y.append(entry[1])
 
         self.ax.scatter(lidar_x, lidar_y, s=.4)
-        #self.ax.set_ylim(np.min(lidar_y), np.max(lidar_y))
         self.ax.set_ylim(-2, 2)
         self.ax.set_xlim(-2, 2)
         line_x = []
@@ -226,7 +191,6 @@ class ConeLocalizationNode(Node):
         colors = []
         for cone in self.cones_clustered:
             x, y = cone[0], cone[1]
-            # print("distance: ", cone[1], "labelclass: ", cone[3], "angle: ", cone[0])
             x_cone.append(x)
             y_cone.append(y)
 
@@ -241,7 +205,6 @@ class ConeLocalizationNode(Node):
 
         for cone in self.cones_new:
             x, y = cone[0], cone[1]
-            # print("distance: ", cone[1], "labelclass: ", cone[3], "angle: ", cone[0])
             x_cone.append(x)
             y_cone.append(y)
 
@@ -253,7 +216,6 @@ class ConeLocalizationNode(Node):
                 colors.append('yellow')
             else:
                 colors.append('red')  # error case
-        #print(len(self.cones_clustered))
         self.ax.scatter(x_cone, y_cone, color=colors)
         plt.pause(.5)
 
@@ -300,10 +262,6 @@ class ConeLocalizationNode(Node):
                 angle = (start + end) / 2.
                 x, y = self.get_euclidean_coordinates((angle - position[2]) % 360, distance)
                 delta_rotation = position[2]
-                rotation_angle = np.deg2rad(delta_rotation)
-                #print(position)
-                #x = np.cos(rotation_angle)*x - np.sin(rotation_angle)*y
-                #y = np.sin(rotation_angle)*x + np.cos(rotation_angle)*y
                 x += position[0]
                 y += position[1]
                 print("x: ", x, "y: ", y)
@@ -315,8 +273,6 @@ class ConeLocalizationNode(Node):
         fov = 64
         left = 180 - (fov / 2)
         n_pixels = 640
-        # print("cone 0: ", cone[0])
-        # print("cone 2:", cone[2])
         start = left + cone[0] * fov / n_pixels
         end = left + cone[2] * fov / n_pixels
 

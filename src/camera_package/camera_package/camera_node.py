@@ -1,3 +1,6 @@
+import time
+
+import builtin_interfaces
 import rclpy
 import cv2
 from rclpy.node import Node
@@ -14,7 +17,8 @@ class CameraNode(Node):
     def __init__(self):
         super().__init__('camera_node')
         self.timer_period = 0.  # seconds
-        self.cap = cv2.VideoCapture(0)
+        #self.cap = cv2.VideoCapture(0)
+        self.cap = cv2.imread("/home/ubuntu/validation/images/12.png")
         self.bridge = CvBridge()
         self.publisher_ = self.create_publisher(Image, '/images/raw', 10)
         self.subscription_ = self.create_subscription(Float64, '/camera/freq', self.camera_ctrl_callback, 10)
@@ -23,9 +27,19 @@ class CameraNode(Node):
         self.timer.cancel() # to start with 0Hz
 
     def capture_image_callback(self):
-        ret, frame = self.cap.read()
+        #ret, frame = self.cap.read()
+        ret = True
+        frame = self.cap
         if ret:
-            self.publisher_.publish(self.bridge.cv2_to_imgmsg(frame))
+            imgmsg = self.bridge.cv2_to_imgmsg(frame)
+            t = builtin_interfaces.msg.Time()
+            now = time.time()
+            sec = int(now)
+            nsec = int((now - sec)*10**9)
+            t.sec = sec
+            t.nanosec = nsec
+            imgmsg.header.stamp = t
+            self.publisher_.publish(imgmsg)
             self.get_logger().info(f"raw image ->")
 
     def camera_ctrl_callback(self, msg):

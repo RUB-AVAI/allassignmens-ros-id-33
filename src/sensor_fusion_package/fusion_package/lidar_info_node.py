@@ -3,11 +3,9 @@ import rclpy
 from matplotlib import pyplot as plt
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray, Bool
-
+from avai_messages.msg import Cones
 
 class Lidar_info_node(Node):
-
-
 
     def __init__(self):
         super().__init__('sensor_fusion_node')
@@ -16,6 +14,11 @@ class Lidar_info_node(Node):
         self.confidence = 0.03
         self.create_subscription(Float32MultiArray, '/laser/scanned', self.new_data, 10)
         self.create_subscription(Bool, '/lidar/graph', self.callback, 10)
+        self.create_subscription(Cones, '/images/labels', self.label_callback, 10)
+
+    def label_callback(self, data):
+        print(data.header.stamp.nanosec)
+        print(data.header.stamp.sec)
 
     def new_data(self, data):
         self.distances = []

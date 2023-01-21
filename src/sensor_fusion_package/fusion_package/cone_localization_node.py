@@ -23,7 +23,7 @@ class ConeLocalizationNode(Node):
         self.lidar_data = []
         self.startup_position = []
         self.relative_position = []
-        self.sign = -1
+        self.sign = -1 # quick fix for reversed odometryg
 
         self.count_for_DBSCAN = 0
         self.RATE_OF_DBSCAN = 5

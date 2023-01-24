@@ -11,6 +11,7 @@ import message_filters
 from avai_messages.msg import Cones
 from sklearn.cluster import DBSCAN
 import tf_transformations
+from .icp import icp
 
 
 class ConeLocalizationNode(Node):
@@ -20,9 +21,10 @@ class ConeLocalizationNode(Node):
 
         self.cones_new = []
         self.cones_clustered = []
-        self.lidar_data = []
-        self.startup_position = []
-        self.relative_position = []
+        self.lidar_data = None # should be numpy.ndarray with shape (360, 2)
+        self.odom_data = None # Odometry.pose.pose
+        self.position = [0, 0] # robots position in meters
+        self.orientation = 0 # robots head orientation in radians
         self.sign = -1
 
         self.count_for_DBSCAN = 0
@@ -46,18 +48,12 @@ class ConeLocalizationNode(Node):
 
         self.get_logger().info("Start sensor fusion")
         lidar_data = np.asarray(laser.ranges[::-1])
-        r, p, y = tf_transformations.euler_from_quaternion([odom.pose.pose.orientation.x, odom.pose.pose.orientation.y, odom.pose.pose.orientation.z, odom.pose.pose.orientation.w])
 
-        position = np.asarray([odom.pose.pose.position.x, odom.pose.pose.position.y, np.rad2deg(-y)])
-        if len(self.startup_position) == 0:
-            self.startup_position = position
+        # TODO: initialize position and orientation if still None
 
-        rel_pos = [self.sign*(position[0] - self.startup_position[0]), self.sign*(position[1] - self.startup_position[1]),
-                   (self.startup_position[2] - position[2]) % 360]
-        self.relative_position = rel_pos
         cone_labels = labels.cones
 
-        cones = self.received_labels(cone_labels, lidar_data, rel_pos)
+        cones = self.received_labels(cone_labels, lidar_data, [self.position[0], self.position[1], np.rad2deg(self.orientation)]) # TODO: also calculate position here like done in synchronized callback
         for cone in cones:
             self.cones_new.append(cone)
 
@@ -65,23 +61,23 @@ class ConeLocalizationNode(Node):
 
         if self.count_for_DBSCAN == self.RATE_OF_DBSCAN:
             self.get_logger().info("using DBSCAN")
-            # cluster new cones and append them to cones_clustered
 
+            # cluster new cones and append them to cones_clustered
             if len(self.cones_new) > 0:
                 clustered_cones = self.use_dbscan(self.cones_new)
                 for c in clustered_cones:
                     self.cones_clustered.append(c)
                 self.cones_new = []
+
             # cluster already clustered cones
             if len(self.cones_clustered) > 0:
                 self.cones_clustered = self.use_dbscan(self.cones_clustered, 1)
                 pass
-            self.count_for_DBSCAN = 0  # To prevent overflow
+            self.count_for_DBSCAN = 0
 
 
     def use_dbscan(self, data_set, _min_samples=2, _eps=.1):
         # clustering over x, y, color
-        # TODO: Check whether values are saved correctly for clustering!
         x_train = []
         # We set the z coordinate of the cones points in DBSCAN as DIGIT_FOR_COLOR * (_eps + 1)
         # to prevent clustering cones of different color to one.
@@ -91,13 +87,10 @@ class ConeLocalizationNode(Node):
 
         dbscan = DBSCAN(eps=_eps, min_samples=_min_samples).fit(x_train)
 
+        # in cluster_lables sind die entsprechenden Labels für jeden Eintrag --> neuer Wert --> neues Hütchen
         cluster_labels = dbscan.labels_
 
-        # in cluster_lables sind die entsprechenden Labels für jeden Eintrag --> neuer Wert --> neues Hütchen
-
         DBSCAN_dataset = data_set.copy()
-        # using np.concatenate method, because faster
-        # TODO: Check concatenation!
         DBSCAN_dataset = np.concatenate((DBSCAN_dataset, cluster_labels[:, np.newaxis]), axis=1)
 
         amount_cones = len(set(cluster_labels))
@@ -123,49 +116,76 @@ class ConeLocalizationNode(Node):
         return new_cone_representation
 
     def synchronized_callback(self, laser, odom):
+        """
+        Callback on laser and odometry data. Tries to keep track of position with ICP.
+        :param laser:
+        :param odom:
+        :return:
+        """
         lidar_data = np.asarray(laser.ranges[::-1])
-        r, p, y = tf_transformations.euler_from_quaternion(
-            [odom.pose.pose.orientation.x, odom.pose.pose.orientation.y, odom.pose.pose.orientation.z,
-             odom.pose.pose.orientation.w])
-        position = [odom.pose.pose.position.x, odom.pose.pose.position.y, np.rad2deg(-y)]
+        odom_data = odom.pose.pose
 
-        if len(self.startup_position) == 0:
-            self.startup_position = position
+        # initialize odom_data if it is first call of function
+        if self.odom_data is None:
+            self.odom_data = odom_data
 
-        rel_pos = []
-        rel_pos.append(self.sign*(position[0] - self.startup_position[0]))
-        rel_pos.append(self.sign*(position[1] - self.startup_position[1]))
-        rel_pos.append((self.startup_position[2] - position[2]) % 360)
-        self.relative_position = rel_pos
+        # calculate estimated new pos
+        delta_x = odom_data.position.x - self.odom_data.position.x
+        delta_y = odom_data.position.y - self.odom_data.position.y
+        _, _, yaw_old = tf_transformations.euler_from_quaternion(self.odom_data.orientation)
+        _, _, yaw_new = tf_transformations.euler_from_quaternion(odom_data.orientation)
+        delta_yaw = yaw_old - yaw_new # yaw in radians
+
+        estimated_pos = [self.position[0] + delta_x, self.position[1] + delta_y]
+        estimated_yaw = self.orientation + delta_yaw
+
         l_data = []
         for angle in range(len(lidar_data)):
             distance = lidar_data[angle]
-
-            x, y = self.get_euclidean_coordinates((angle - rel_pos[2]) % 360, distance)
-
-            x += self.relative_position[0]
-            y += self.relative_position[1]
+            x, y = self.get_euclidean_coordinates(angle, distance)
             l_data.append([x, y])
+
+        # needs to be np.array(360, 2) in order for ICP to work (reshape might not be needed)
+        l_data = np.asarray(l_data) #.reshape(360, 2)
+
+        # initialize lidar_data on first function call
+        if self.lidar_data is None:
+            self.lidar_data = l_data
+
+        # do icp and compare translation and rotation
+        transformation_history, _ = icp(reference_points=self.lidar_data, points=l_data, max_iterations=100, distance_threshold=0.3,
+            convergence_translation_threshold=1e-3,
+            convergence_rotation_threshold=1e-4, point_pairs_threshold=10, verbose=False)
+
+        # TODO: get one transformation matrix out of transformation_history (translation + rotation)
+        # Idea: build euler transformation and apply in order
+
+
+        # TODO: compare them and get some error value
 
         self.lidar_data = l_data
         self.draw()
 
     def draw(self):
-        """
-        Plots the current situation with matplotlib
-        """
-        # draw robot in the middle
+        """ Plots the current situation with matplotlib """
+        # clear the axis (the plot)
         self.ax.cla()
-        X = [self.relative_position[0]]
-        Y = [self.relative_position[1]]
-        self.ax.scatter(self.relative_position[0], self.relative_position[1], color='black', alpha=1)
 
+        # draw robot
+        self.ax.scatter(self.position[0], self.position[1], color='black', alpha=1)
+
+        # draw the lidar data
         lidar_x = []
         lidar_y = []
-
         for entry in self.lidar_data:
-            lidar_x.append(entry[0])
-            lidar_y.append(entry[1])
+            # rotate and translate according to robots position and orientation
+            c, s = np.cos(self.orientation), np.sin(self.orientation)
+            tmp_x = c * entry[0] - s * entry[1]
+            tmp_y = c * entry[0] + c * entry[1]
+            tmp_x += self.position[0]
+            tmp_y += self.position[1]
+            lidar_x.append(tmp_x)
+            lidar_y.append(tmp_y)
 
         self.ax.scatter(lidar_x, lidar_y, s=.4)
         self.ax.set_ylim(-2, 2)
@@ -174,19 +194,22 @@ class ConeLocalizationNode(Node):
         line_y = []
         dist = np.linspace(0, 2, 100)
 
-        orientation = self.relative_position[2]
+        # draw robots fov to show direction
+        orientation = np.rad2deg(self.orientation)
 
         for d in dist:
             lx, ly = self.get_euclidean_coordinates((148 - orientation) % 360, d)
-            line_x.append(lx + X)
-            line_y.append(ly + Y)
+            line_x.append(lx + self.position[0])
+            line_y.append(ly + self.position[1])
 
         for d in dist:
             lx, ly = self.get_euclidean_coordinates((212 - orientation) % 360, d)
-            line_x.append(lx + X)
-            line_y.append(ly + Y)
+            line_x.append(lx + self.position[0])
+            line_y.append(ly + self.position[1])
 
         self.ax.plot(line_x, line_y, color='green')
+
+        # draw the clustered cones (the robots knowledge)
         x_cone_clustered = []
         y_cone_clustered = []
         colors_clustered = []
@@ -204,6 +227,7 @@ class ConeLocalizationNode(Node):
             else:
                 colors_clustered.append('red')  # error case
 
+        # draw the cones that are not yet clustered
         x_cone = []
         y_cone = []
         colors = []

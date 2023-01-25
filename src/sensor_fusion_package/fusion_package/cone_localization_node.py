@@ -25,7 +25,7 @@ class ConeLocalizationNode(Node):
         self.odom_data = None # Odometry.pose.pose
         self.position = [0, 0] # robots position in meters
         self.orientation = 0 # robots head orientation in radians
-        self.sign = -1
+        # self.sign = -1
 
         self.count_for_DBSCAN = 0
         self.RATE_OF_DBSCAN = 5
@@ -157,11 +157,27 @@ class ConeLocalizationNode(Node):
             convergence_translation_threshold=1e-3,
             convergence_rotation_threshold=1e-4, point_pairs_threshold=10, verbose=False)
 
-        # TODO: get one transformation matrix out of transformation_history (translation + rotation)
-        # Idea: build euler transformation and apply in order
+        # get one transformation matrix out of transformation_history (translation + rotation)
+        # Note: rotation and translation are commutativ
+        transformation_matrix = np.eye(3)
+        for transform in transformation_history: # TODO: check how to iterate
+            t = transform[0] # might be wrong need to test with robot
+            M = transform[1]
+            trans_mat = np.eye(3)
+            trans_mat[:2, :2] = M
+            trans_mat[2, :2] = t
+            transformation_matrix @= trans_mat
 
-
+        delta_x = transformation_matrix[2, 0]
+        delta_y = transformation_matrix[2, 1]
+        delta_yaw = np.arcsin(transformation_matrix[0, 1])
         # TODO: compare them and get some error value
+
+        # TODO: what to do if error too big? Only use odom??
+
+        self.position = [self.position[0] + delta_x, self.position[1] + delta_y]
+        self.orientation = self.orientation + delta_yaw
+
 
         self.lidar_data = l_data
         self.draw()
@@ -181,7 +197,7 @@ class ConeLocalizationNode(Node):
             # rotate and translate according to robots position and orientation
             c, s = np.cos(self.orientation), np.sin(self.orientation)
             tmp_x = c * entry[0] - s * entry[1]
-            tmp_y = c * entry[0] + c * entry[1]
+            tmp_y = s * entry[0] + c * entry[1]
             tmp_x += self.position[0]
             tmp_y += self.position[1]
             lidar_x.append(tmp_x)
@@ -195,7 +211,7 @@ class ConeLocalizationNode(Node):
         dist = np.linspace(0, 2, 100)
 
         # draw robots fov to show direction
-        orientation = np.rad2deg(self.orientation)
+        orientation = np.rad2deg(self.orientation) # get orientation in radians
 
         for d in dist:
             lx, ly = self.get_euclidean_coordinates((148 - orientation) % 360, d)

@@ -132,8 +132,11 @@ class ConeLocalizationNode(Node):
         # calculate estimated new pos
         delta_x = odom_data.position.x - self.odom_data.position.x
         delta_y = odom_data.position.y - self.odom_data.position.y
-        _, _, yaw_old = tf_transformations.euler_from_quaternion(self.odom_data.orientation)
-        _, _, yaw_new = tf_transformations.euler_from_quaternion(odom_data.orientation)
+
+        _, _, yaw_old = tf_transformations.euler_from_quaternion([self.odom_data.orientation.x, self.odom_data.orientation.y, self.odom_data.orientation.z,
+             self.odom_data.orientation.w])
+        _, _, yaw_new = tf_transformations.euler_from_quaternion([odom_data.orientation.x, odom_data.orientation.y, odom_data.orientation.z,
+             odom_data.orientation.w])
         delta_yaw = yaw_old - yaw_new # yaw in radians
 
         estimated_pos = [self.position[0] + delta_x, self.position[1] + delta_y]
@@ -150,27 +153,32 @@ class ConeLocalizationNode(Node):
 
         # initialize lidar_data on first function call
         if self.lidar_data is None:
+            print(self.lidar_data)
             self.lidar_data = l_data
 
         # do icp and compare translation and rotation
-        transformation_history, _ = icp(reference_points=self.lidar_data, points=l_data, max_iterations=100, distance_threshold=0.3,
-            convergence_translation_threshold=1e-3,
-            convergence_rotation_threshold=1e-4, point_pairs_threshold=10, verbose=False)
+        transformation_history, _ = icp(reference_points=l_data,
+                                        points=self.lidar_data,
+                                        max_iterations=100,
+                                        distance_threshold=1e-3,
+                                        convergence_translation_threshold=1,
+                                        convergence_rotation_threshold=1,
+                                        point_pairs_threshold=150,
+                                        verbose=True)
 
         # get one transformation matrix out of transformation_history (translation + rotation)
         # Note: rotation and translation are commutativ
-        transformation_matrix = np.eye(3)
-        for transform in transformation_history: # TODO: check how to iterate
-            t = transform[0] # might be wrong need to test with robot
-            M = transform[1]
-            trans_mat = np.eye(3)
-            trans_mat[:2, :2] = M
-            trans_mat[2, :2] = t
-            transformation_matrix @= trans_mat
+        transformation_matrix = np.eye(3, 3)
+        for transform in transformation_history:
+            trans_mat = np.eye(3, 3)
+            trans_mat[:2, :3] = transform
+            transformation_matrix = transformation_matrix @ trans_mat
 
+        print(f"position delta odom; {delta_x}, {delta_y}, {delta_yaw}")
         delta_x = transformation_matrix[2, 0]
         delta_y = transformation_matrix[2, 1]
         delta_yaw = np.arcsin(transformation_matrix[0, 1])
+        print(f"position delta odom; {delta_x}, {delta_y}, {delta_yaw}")
         # TODO: compare them and get some error value
 
         # TODO: what to do if error too big? Only use odom??

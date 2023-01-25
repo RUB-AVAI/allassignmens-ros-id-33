@@ -29,7 +29,7 @@ class ConeLocalizationNode(Node):
         self.sign = -1  # quick fix for reversed odometry
 
         self.count_for_DBSCAN = 0
-        self.RATE_OF_DBSCAN = 5
+        self.RATE_OF_DBSCAN = 8
 
         self.fig, self.ax = plt.subplots()
 
@@ -44,7 +44,7 @@ class ConeLocalizationNode(Node):
         self.draw_synchronizer.registerCallback(self.synchronized_callback)
 
         self.cone_synchronizer = message_filters.ApproximateTimeSynchronizer(
-            [self.laserfilt, self.odomfilt, self.labelfilt], queue_size=1000, slop=.1)
+            [self.laserfilt, self.odomfilt, self.labelfilt], queue_size=50, slop=.05)
         self.cone_synchronizer.registerCallback(self.fusion_callback)
 
     def mock_callback(self, data):
@@ -102,7 +102,7 @@ class ConeLocalizationNode(Node):
 
     def calculate_track(self, cone_data):
 
-        #calculate the trackbeginning from orange cone to yellow/blue
+        # calculate the trackbeginning from orange cone to yellow/blue
         blue_cones = cone_data[0].copy()
         orange_cones = cone_data[1].copy()
         yellow_cones = cone_data[2].copy()
@@ -150,7 +150,11 @@ class ConeLocalizationNode(Node):
                 yellow_cones.remove(cone_yellow)
                 yellow_track_index += 1
 
-        return [blue_track, yellow_track]
+            return [blue_track, yellow_track]
+
+        else:
+            return []
+
     def get_nearest_cone(self, reference_cone, cone_list):
         if len(cone_list) == 0:
             return None
@@ -163,8 +167,7 @@ class ConeLocalizationNode(Node):
                 nearest_cone = listed_cone
         return nearest_cone, closest_distance
 
-
-    def use_dbscan(self, data_set, _min_samples=2, _eps=.1):
+    def use_dbscan(self, data_set, _min_samples=4, _eps=.1):
         # clustering over x, y, color
         # TODO: Check whether values are saved correctly for clustering!
         x_train = []
@@ -253,8 +256,8 @@ class ConeLocalizationNode(Node):
             lidar_y.append(entry[1])
 
         self.ax.scatter(lidar_x, lidar_y, s=.4)
-        self.ax.set_ylim(-2, 2)
-        self.ax.set_xlim(-2, 2)
+        self.ax.set_ylim(-2 + +Y[0], 2 + Y[0])
+        self.ax.set_xlim(-2 + X[0], 2 + X[0])
         line_x = []
         line_y = []
         dist = np.linspace(0, 2, 100)
@@ -307,16 +310,17 @@ class ConeLocalizationNode(Node):
                 colors.append('red')  # error case
         self.ax.scatter(x_cone, y_cone, color=colors, alpha=.3)
         self.ax.scatter(x_cone_clustered, y_cone_clustered, color=colors_clustered, marker="x")
-        blue_track = self.track[0]
-        yellow_track = self.track[1]
-        blue_x = [cone[0] for cone in blue_track]
-        blue_y = [cone[1] for cone in blue_track]
-        yellow_x = [cone[0] for cone in yellow_track]
-        yellow_y = [cone[1] for cone in yellow_track]
-        self.ax.plot(blue_x, blue_y, color='blue')
-        self.ax.plot(yellow_x, yellow_y, color='yellow')
-        plt.show()
-        # plt.pause(.5)
+
+        if len(self.track) == 2:
+            blue_track = self.track[0]
+            yellow_track = self.track[1]
+            blue_x = [cone[0] for cone in blue_track]
+            blue_y = [cone[1] for cone in blue_track]
+            yellow_x = [cone[0] for cone in yellow_track]
+            yellow_y = [cone[1] for cone in yellow_track]
+            self.ax.plot(blue_x, blue_y, color='blue')
+            self.ax.plot(yellow_x, yellow_y, color='yellow')
+        plt.pause(.1)
 
     @staticmethod
     def get_euclidean_distance(cone1, cone2):
@@ -371,7 +375,7 @@ class ConeLocalizationNode(Node):
                 delta_rotation = position[2]
                 x += position[0]
                 y += position[1]
-                print("x: ", x, "y: ", y)
+                #print("x: ", x, "y: ", y)
                 received_cones.append([x, y, cone[4], cone[5]])
         return received_cones
 

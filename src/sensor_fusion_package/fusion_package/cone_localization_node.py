@@ -1,16 +1,14 @@
-import cv2
-import rclpy
-from rclpy.node import Node
-from std_msgs.msg import Float32MultiArray, Bool
-import numpy as np
-from sensor_msgs.msg import LaserScan
-from nav_msgs.msg import Odometry
-from matplotlib import pyplot as plt
-from rclpy.qos import qos_profile_sensor_data, QoSProfile
 import message_filters
+import numpy as np
+import rclpy
 from avai_messages.msg import Cones
+from matplotlib import pyplot as plt
+from nav_msgs.msg import Odometry
+from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data, QoSProfile
+from sensor_msgs.msg import LaserScan
 from sklearn.cluster import DBSCAN
-import tr_transformations
+import tf_transformations
 
 
 class ConeLocalizationNode(Node):

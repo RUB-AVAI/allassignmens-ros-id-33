@@ -6,8 +6,7 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
-import numpy as np
-import asyncio
+import glob
 
 from src.camera_package.camera_package.image_processing_node import ImageProcessingNode
 
@@ -59,7 +58,6 @@ class ImageProcessingNodeIntegrationTest(TestCase):
 
     def test_image_publishing_and_resolution(self):
         # GIVEN raw images
-        import glob
         raw_images = [cv2.imread(file) for file in glob.glob("images/raw/*.png")]
 
         # WHEN node is spinning

@@ -67,7 +67,9 @@ class ImageProcessingNodeIntegrationTest(TestCase):
             rclpy.spin_once(self.ipNode)
             rclpy.spin_once(self.image_subscriber_test)
 
-        self.assertEqual(4, len(self.received_messages_image_sub))
+        rclpy.spin_once(self.ipNode)
+        rclpy.spin_once(self.image_subscriber_test)
+        self.assertEqual(5, len(self.received_messages_image_sub))
 
         for image in self.received_messages_image_sub:
             cv2image = self.cvBridge.imgmsg_to_cv2(image)

@@ -61,7 +61,7 @@ class ImageProcessingNodeIntegrationTest(TestCase):
         raw_images = [cv2.imread(file) for file in glob.glob("images/raw/*.png")]
 
         # WHEN node is spinning
-        # THEN there have to be 5 images published in the same order
+        # THEN there have to be 5 images published
         for image in raw_images:
             self.image_publisher_test.publish(self.cvBridge.cv2_to_imgmsg(image))
             rclpy.spin_once(self.ipNode)

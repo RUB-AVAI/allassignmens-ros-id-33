@@ -1,3 +1,6 @@
+import math
+import time
+
 import cv2
 import rclpy
 from rclpy.node import Node
@@ -25,6 +28,7 @@ class ConeLocalizationNode(Node):
         self.lidar_data = []
         self.track = []
         self.startup_position = []
+        self.calibrated_position = None
         self.relative_position = []
         self.sign = -1  # quick fix for reversed odometry
 
@@ -68,12 +72,23 @@ class ConeLocalizationNode(Node):
         position = np.asarray([odom.pose.pose.position.x, odom.pose.pose.position.y, np.rad2deg(-y)])
         if len(self.startup_position) == 0:
             self.startup_position = position
+        if self.calibrated_position is None:
+            self.calibrated_position = position
 
         rel_pos = [self.sign * (position[0] - self.startup_position[0]),
                    self.sign * (position[1] - self.startup_position[1]),
                    (self.startup_position[2] - position[2]) % 360]
         self.relative_position = rel_pos
         cone_labels = labels.cones
+
+        # Checking condition for calibration.
+        # If last calibrated position is further away then 0.5 meter, then calibrate
+        position_delta = self.get_euclidean_distance(
+                cone1=[self.calibrated_position[0], self.calibrated_position[1]],
+                cone2=[position[0],position[1]])
+
+        if position_delta >= 0.5 and len(self.cones_clustered) > 0:
+            self.calibrate_position(labels=labels, lidar_data=laser, position=rel_pos)
 
         cones = self.received_labels(cone_labels, lidar_data, rel_pos)
         for cone in cones:
@@ -343,6 +358,18 @@ class ConeLocalizationNode(Node):
         y = distance * np.sin(-rad)
         return x, y
 
+
+    @staticmethod
+    def calculate_range_and_angle(cone: tuple, robot: tuple) -> tuple:
+        range = ConeLocalizationNode.get_euclidean_distance(cone, robot)
+        angle = math.atan((cone[1] - robot[1]) / (cone[0] - robot[0]))
+        return range, angle
+
+    def calibrate_position(self, labels, lidar_data, position):
+        for cone in self.cones_clustered:
+            rangee, angle = self.calculate_range_and_angle(cone, position)
+
+
     def received_labels(self, labels, lidar_data, position) -> list:
         # could be static method
         """
@@ -362,7 +389,6 @@ class ConeLocalizationNode(Node):
             start += offset
             end += offset
             shift = difference * 1 / 6
-
             cone_distances = lidar_data[round(start + shift):round(end - shift)]
             cone_distances = list(filter(lambda x: 0 < x < 2.5, cone_distances))
 

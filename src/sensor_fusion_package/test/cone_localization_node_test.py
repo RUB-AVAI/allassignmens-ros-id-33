@@ -77,12 +77,12 @@ class ConeLocalizationTest(TestCase):
         x_orange_mean, y_orange_mean = np.mean(dbscan_data_set[3:6][0]), np.mean(dbscan_data_set[3:6][1])
         x_yellow_mean, y_yellow_mean = np.mean(dbscan_data_set[6:9][0]), np.mean(dbscan_data_set[6:9][1])
 
-        cones_expected = [[x_blue_mean, y_blue_mean, 0],
-                          [x_orange_mean, y_orange_mean, 1],
-                          [x_yellow_mean, y_yellow_mean, 2]]
+        cones_expected = [[x_blue_mean, y_blue_mean, self.color_to_int('blue')],
+                          [x_orange_mean, y_orange_mean, self.color_to_int('orange')],
+                          [x_yellow_mean, y_yellow_mean, self.color_to_int('yellow')]]
 
         new_cone_representation = self.coneNode.use_dbscan(dbscan_data_set, _min_samples=2, _eps=0.1)
-        self.assertEqual(4, len(new_cone_representation))
+        self.assertEqual(3, len(new_cone_representation))
 
         for cone in new_cone_representation:
             self.assertEqual(cones_expected[0], cone[0])

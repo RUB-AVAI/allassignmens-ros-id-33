@@ -39,7 +39,6 @@ class ConeLocalizationTest(TestCase):
         right = pictureBeginning + cone[2] * fov / amount_pixels
         self.assertEqual((left, right), self.coneNode.calculate_lidar_range(cone))
 
-
     # ======== UNIT TESTS ============
 
     def test_topics(self):
@@ -59,7 +58,6 @@ class ConeLocalizationTest(TestCase):
                                     random.randint(-200, 200), 2, 2])
             self.check_lidar_range(
                 [random.randrange(0, 1), random.randrange(0, 1), random.randrange(0, 1), random.randrange(0, 1), 0, 0])
-
 
     def test_clustering(self):
         # Dataset structure is (x, y, _, color) with color as:
@@ -90,7 +88,7 @@ class ConeLocalizationTest(TestCase):
             self.assertEqual(cones_expected[0], cone[0])
             self.assertEqual(cones_expected[1], cone[1])
             self.assertEqual(cones_expected[2], cone[3])
-        
+
     def color_to_int(self, color: str):
         if color == 'blue':
             return 0
@@ -100,9 +98,9 @@ class ConeLocalizationTest(TestCase):
             return 2
         else:
             return 3
-    
 
-   # ========= INTEGRATION TESTS ============
+
+# ========= INTEGRATION TESTS ============
 
 class cone_localization_integration(TestCase):
 
@@ -127,7 +125,7 @@ class cone_localization_integration(TestCase):
         self.lidarPublisherTest.publish(msg)
         rclpy.spin_once(self.localizationNode)
         for i in range(360):
-            self.assertAlmostEqual(data[i], self.localizationNode.lidar_data[359-i])
+            self.assertAlmostEqual(data[i], self.localizationNode.lidar_data[359 - i])
 
     def test_lidar_subscription(self):
         data = []
@@ -139,7 +137,6 @@ class cone_localization_integration(TestCase):
         for i in range(360):
             data.append(float(random.randrange(-100, 100)))
         self.check_lidar_subscription(data)
-
 
     def tearDown(self) -> None:
         self.localizationNode.destroy_node()

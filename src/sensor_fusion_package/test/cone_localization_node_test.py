@@ -84,10 +84,10 @@ class ConeLocalizationTest(TestCase):
         new_cone_representation = self.coneNode.use_dbscan(dbscan_data_set, _min_samples=2, _eps=0.1)
         self.assertEqual(3, len(new_cone_representation))
 
-        for cone in new_cone_representation:
-            self.assertEqual(cones_expected[0], cone[0])
-            self.assertEqual(cones_expected[1], cone[1])
-            self.assertEqual(cones_expected[2], cone[3])
+        for i in range(len(new_cone_representation)):
+            self.assertAlmostEqual(cones_expected[i][0], new_cone_representation[i][0], places=3)
+            self.assertAlmostEqual(cones_expected[i][1], new_cone_representation[i][1], places=3)
+            self.assertAlmostEqual(cones_expected[i][2], new_cone_representation[i][3], places=3)
 
     def color_to_int(self, color: str):
         if color == 'blue':

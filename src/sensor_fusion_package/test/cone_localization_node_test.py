@@ -64,13 +64,13 @@ class ConeLocalizationTest(TestCase):
         # blue == 0, orange == 1, yellow == 2, else is 3.
         dbscan_data_set = [[x, y, 0, self.color_to_int('blue')]
                            for x in np.linspace(10, 10.2, 25)
-                           for y in np.linspace(22, 20.2, 25)]
+                           for y in np.linspace(20, 22.2, 25)]
         dbscan_data_set += [[x, y, 0, self.color_to_int('orange')]
                             for x in np.linspace(30, 30.1, 10)
-                            for y in np.linspace(40, 40.2, 10)]
+                            for y in np.linspace(40, 41.2, 10)]
         dbscan_data_set += [[x, y, 0, self.color_to_int('yellow')]
-                            for x in np.linspace(100, 100.05, 15)
-                            for y in np.linspace(101, 101.10, 15)]
+                            for x in np.linspace(100, 100.05, 30)
+                            for y in np.linspace(101, 103.10, 30)]
         dbscan_data_set += [[12, 13, 0, self.color_to_int('blue')]]
 
         x_blue_mean, y_blue_mean = np.mean(dbscan_data_set[0:3][0]), np.mean(dbscan_data_set[0:3][1])

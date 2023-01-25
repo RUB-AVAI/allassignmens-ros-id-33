@@ -60,6 +60,48 @@ class ConeLocalizationTest(TestCase):
             self.check_lidar_range(
                 [random.randrange(0, 1), random.randrange(0, 1), random.randrange(0, 1), random.randrange(0, 1), 0, 0])
 
+
+    def test_clustering(self):
+        # Dataset structure is (x, y, _, color) with color as:
+        # blue == 0, orange == 1, yellow == 2, else is 3.
+        dbscan_data_set = [[x, y, 0, self.color_to_int('blue')]
+                           for x in np.linspace(10, 10.2, 25)
+                           for y in np.linspace(22, 20.2, 25)]
+        dbscan_data_set += [[x, y, 0, self.color_to_int('orange')]
+                            for x in np.linspace(30, 30.1, 10)
+                            for y in np.linspace(40, 40.2, 10)]
+        dbscan_data_set += [[x, y, 0, self.color_to_int('yellow')]
+                            for x in np.linspace(100, 100.05, 15)
+                            for y in np.linspace(101, 101.10, 15)]
+        dbscan_data_set += [[12, 13, 0, self.color_to_int('blue')]]
+
+        x_blue_mean, y_blue_mean = np.mean(dbscan_data_set[0:3][0]), np.mean(dbscan_data_set[0:3][1])
+        x_orange_mean, y_orange_mean = np.mean(dbscan_data_set[3:6][0]), np.mean(dbscan_data_set[3:6][1])
+        x_yellow_mean, y_yellow_mean = np.mean(dbscan_data_set[6:9][0]), np.mean(dbscan_data_set[6:9][1])
+
+        cones_expected = [[x_blue_mean, y_blue_mean, 0],
+                          [x_orange_mean, y_orange_mean, 1],
+                          [x_yellow_mean, y_yellow_mean, 2]]
+
+        new_cone_representation = self.coneNode.use_dbscan(dbscan_data_set, _min_samples=2, _eps=0.1)
+        self.assertEqual(4, len(new_cone_representation))
+
+        for cone in new_cone_representation:
+            self.assertEqual(cones_expected[0], cone[0])
+            self.assertEqual(cones_expected[1], cone[1])
+            self.assertEqual(cones_expected[2], cone[3])
+        
+    def color_to_int(self, color: str):
+        if color == 'blue':
+            return 0
+        elif color == 'orange':
+            return 1
+        elif color == 'yellow':
+            return 2
+        else:
+            return 3
+    
+
    # ========= INTEGRATION TESTS ============
 
 class cone_localization_integration(TestCase):

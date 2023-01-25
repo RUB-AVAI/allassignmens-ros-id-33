@@ -10,7 +10,7 @@ from rclpy.qos import qos_profile_sensor_data, QoSProfile
 import message_filters
 from avai_messages.msg import Cones
 from sklearn.cluster import DBSCAN
-import tf_transformations
+import tr_transformations
 
 
 class ConeLocalizationNode(Node):
@@ -97,7 +97,6 @@ class ConeLocalizationNode(Node):
 
         DBSCAN_dataset = data_set.copy()
         # using np.concatenate method, because faster
-        # TODO: Check concatenation!
         DBSCAN_dataset = np.concatenate((DBSCAN_dataset, cluster_labels[:, np.newaxis]), axis=1)
 
         amount_cones = len(set(cluster_labels))

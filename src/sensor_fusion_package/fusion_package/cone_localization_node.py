@@ -24,8 +24,14 @@ class ConeLocalizationNode(Node):
         self.cones_clustered = []
         self.lidar_data = []
         self.track = []
+        self.autonomous_track = []
         self.startup_position = []
         self.relative_position = []
+        self.start = []
+        self.start_arrived = False
+
+        self.next_drive_commands = []
+
         self.sign = -1  # quick fix for reversed odometry
 
         self.count_for_DBSCAN = 0
@@ -48,13 +54,22 @@ class ConeLocalizationNode(Node):
         self.cone_synchronizer.registerCallback(self.fusion_callback)
 
     def mock_callback(self, data):
-        self.relative_position = [0, 0, -90]
+        self.relative_position = [0.1, -0.4, -90]
         self.cones_clustered = [[0, 0, 1, 1], [0.2, 0, 1, 1], [0.2, 0.2, 1, 2], [0.2, 0.55, 1, 2], [0.3, 0.8, 1, 2],
                                 [0.4, 1.2, 1, 2], [0, 0.2, 0, 0], [0, 0.45, 1, 0], [0.1, 0.8, 1, 0], [0.2, 1.1, 1, 0]]
         cone_knowledge = [[], [], []]
         for cone_known in self.cones_clustered:
             cone_knowledge[int(cone_known[3])].append(cone_known)
         self.track = self.calculate_track(cone_knowledge)
+        self.autonomous_track = self.calculate_drive(self.track)
+        print(self.start)
+        print(self.start_arrived)
+        if self.start_arrived:  # wir waren bereits am Start, also an den orangen Cones
+            self.next_drive_commands = self.calculate_next_drive_commands(self.autonomous_track,
+                                                                          self.relative_position)
+        else:
+            self.next_drive_commands = self.start
+            self.start_arrived = True
         self.draw()
 
     def fusion_callback(self, laser, odom, labels):
@@ -98,6 +113,16 @@ class ConeLocalizationNode(Node):
                 for cone_known in self.cones_clustered:
                     cone_knowledge[int(cone_known[3])].append(cone_known)
                 self.track = self.calculate_track(cone_knowledge)
+                self.autonomous_track = self.calculate_drive(self.track)
+                print(self.start)
+                print(self.start_arrived)
+                if self.start_arrived: # wir waren bereits am Start, also an den orangen Cones
+                    self.next_drive_commands = self.calculate_next_drive_commands(self.autonomous_track,
+                                                                                  self.relative_position)
+                else:
+                    self.next_drive_commands = self.start
+                    self.start_arrived = True
+
             self.count_for_DBSCAN = 0  # To prevent overflow
 
     def calculate_track(self, cone_data):
@@ -155,12 +180,53 @@ class ConeLocalizationNode(Node):
         else:
             return []
 
+    def calculate_drive(self, track):
+        if len(track) == 2:
+            blue_track = track[0].copy()
+            yellow_track = track[1].copy()
+            out = []
+            for b_cone in blue_track:
+                y_cone, y_dist = self.get_nearest_cone(b_cone, yellow_track)
+                b_x = b_cone[0]
+                b_y = b_cone[1]
+                y_x = y_cone[0]
+                y_y = y_cone[1]
+                x_mid = (b_x + y_x) / 2
+                y_mid = (b_y + y_y) / 2
+                out.append([x_mid, y_mid])
+
+            if len(out) > 0:
+                self.start.append(out[0])
+            return out
+
+        else:
+            return []
+
+    def calculate_next_drive_commands(self, auto_track, position):
+
+        robot_position_as_cone = [position[0], position[1], 1, 1]
+        nearest_checkpoint, distance_to_checkpoint = self.get_nearest_cone(robot_position_as_cone, auto_track)
+
+        index_of_current_checkpoint = auto_track.index(nearest_checkpoint)
+        next_checkpoint = index_of_current_checkpoint + 1
+
+        checkpoint_commands = []
+
+        while len(auto_track) - 1 > next_checkpoint:
+            checkpoint_commands.append(auto_track[next_checkpoint])
+            next_checkpoint += 1
+
+        return checkpoint_commands
+
     def get_nearest_cone(self, reference_cone, cone_list):
+
         if len(cone_list) == 0:
             return None
         nearest_cone = cone_list[0]
         closest_distance = self.get_euclidean_distance(reference_cone, nearest_cone)
+        # print("ref_cone: ", reference_cone, "nearest cone: ", nearest_cone, "clostest distnace: ", closest_distance)
         for listed_cone in cone_list:
+            # print(closest_distance)
             distance = self.get_euclidean_distance(reference_cone, listed_cone)
             if distance < closest_distance:
                 closest_distance = distance
@@ -320,7 +386,19 @@ class ConeLocalizationNode(Node):
             yellow_y = [cone[1] for cone in yellow_track]
             self.ax.plot(blue_x, blue_y, color='blue')
             self.ax.plot(yellow_x, yellow_y, color='yellow')
-        plt.pause(.1)
+
+        track_x = []
+        track_y = []
+        for checkpoint in self.next_drive_commands:
+            track_x.append(checkpoint[0])
+            track_y.append(checkpoint[1])
+
+        self.ax.scatter(track_x, track_y, color='tab:gray')
+        self.ax.plot(track_x, track_y, color='tab:gray')
+
+        plt.show() # for testing at home
+
+        # plt.pause(.1) # normal code when working with the bot
 
     @staticmethod
     def get_euclidean_distance(cone1, cone2):
@@ -375,7 +453,7 @@ class ConeLocalizationNode(Node):
                 delta_rotation = position[2]
                 x += position[0]
                 y += position[1]
-                #print("x: ", x, "y: ", y)
+                # print("x: ", x, "y: ", y)
                 received_cones.append([x, y, cone[4], cone[5]])
         return received_cones
 

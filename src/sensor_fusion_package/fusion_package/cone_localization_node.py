@@ -1,19 +1,19 @@
-import math
-import time
-
-import cv2
 import rclpy
+from geometry_msgs.msg import Twist
 from rclpy.node import Node
-from std_msgs.msg import Float32MultiArray, Bool
-import numpy as np
+from rclpy.qos import qos_profile_sensor_data, QoSProfile
+
+from std_msgs.msg import Bool
 from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import Odometry
-from matplotlib import pyplot as plt
-from rclpy.qos import qos_profile_sensor_data, QoSProfile
-import message_filters
 from avai_messages.msg import Cones, Track
-from sklearn.cluster import DBSCAN
+
+import message_filters
 import tf_transformations
+import math
+import numpy as np
+from sklearn.cluster import DBSCAN
+from matplotlib import pyplot as plt
 
 
 # cone_color_code: blue = 0, orange = 1, yellow = 2
@@ -46,6 +46,8 @@ class ConeLocalizationNode(Node):
         self.laserfilt = message_filters.Subscriber(self, LaserScan, '/scan', qos_profile=qos_profile_sensor_data)
         self.odomfilt = message_filters.Subscriber(self, Odometry, '/odom')
         self.labelfilt = message_filters.Subscriber(self, Cones, '/images/labels')
+
+        self.trackpublisher = self.create_publisher(Track, '/track', 10)
 
         self.mocksub = self.create_subscription(Bool, '/lidar/graph', self.mock_callback, 10)
 
@@ -137,6 +139,17 @@ class ConeLocalizationNode(Node):
                 else:
                     self.next_drive_commands = self.start
                     self.start_arrived = True
+
+                # publish the track_message
+                track_message = Track()
+                track_message.start = odom
+                drive_x = [checkpoint[0] for checkpoint in self.next_drive_commands]
+                drive_y = [checkpoint[1] for checkpoint in self.next_drive_commands]
+                track_message.x = drive_x
+                track_message.y = drive_y
+                print(track_message)
+
+                self.trackpublisher.publish(track_message)
 
             self.count_for_DBSCAN = 0  # To prevent overflow
 

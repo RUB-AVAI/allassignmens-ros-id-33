@@ -37,6 +37,9 @@ class ConeLocalizationNode(Node):
         self.start = []
         self.start_arrived = False
 
+        # Last calculated offsets of odometry
+        self.last_x_offset, self.last_y_offset = 0, 0
+
         self.next_drive_commands = []
 
         self.sign = -1  # quick fix for reversed odometry
@@ -108,9 +111,9 @@ class ConeLocalizationNode(Node):
         position_delta = self.get_euclidean_distance(cone1=self.calibrated_position, cone2=self.relative_position)
 
         if position_delta >= 0.5 and len(self.cones_clustered) > 0:
-            x_offset, y_offset = self.calibrate_position(labels=labels, lidar_data=laser, position=rel_pos)
-            self.calibrated_position = [self.relative_position[0] + x_offset,
-                                        self.relative_position[1] + y_offset,
+            self.last_x_offset, self.last_y_offset = self.calibrate_position(labels=labels, lidar_data=laser, position=rel_pos)
+            self.calibrated_position = [self.relative_position[0] + self.last_x_offset,
+                                        self.relative_position[1] + self.last_y_offset,
                                         self.relative_position[2]]
             self.get_logger().log(f"Offset between relative pos and calibrated pos is "
                                   f"{self.get_euclidean_distance(self.relative_position, self.calibrated_position)}")
@@ -323,10 +326,9 @@ class ConeLocalizationNode(Node):
         if len(self.startup_position) == 0:
             self.startup_position = position
 
-        rel_pos = []
-        rel_pos.append(self.sign * (position[0] - self.startup_position[0]))
-        rel_pos.append(self.sign * (position[1] - self.startup_position[1]))
-        rel_pos.append((self.startup_position[2] - position[2]) % 360)
+        rel_pos = [self.sign * (position[0] + self.last_x_offset - self.startup_position[0]),
+                   self.sign * (position[1] + self.last_y_offset - self.startup_position[1]),
+                   (self.startup_position[2] - position[2]) % 360]
         self.relative_position = rel_pos
         l_data = []
         for angle in range(len(lidar_data)):

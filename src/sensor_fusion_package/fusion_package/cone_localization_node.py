@@ -1,5 +1,4 @@
 import rclpy
-from geometry_msgs.msg import Twist
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data, QoSProfile
 
@@ -10,7 +9,6 @@ from avai_messages.msg import Cones, Track
 
 import message_filters
 import tf_transformations
-import math
 import numpy as np
 from sklearn.cluster import DBSCAN
 from matplotlib import pyplot as plt
@@ -275,7 +273,6 @@ class ConeLocalizationNode(Node):
 
     def use_dbscan(self, data_set, _min_samples=4, _eps=.1):
         # clustering over x, y, color
-        # TODO: Check whether values are saved correctly for clustering!
         x_train = []
         # We set the z coordinate of the cones points in DBSCAN as DIGIT_FOR_COLOR * (_eps + 1)
         # to prevent clustering cones of different color to one.
@@ -291,7 +288,6 @@ class ConeLocalizationNode(Node):
 
         DBSCAN_dataset = data_set.copy()
         # using np.concatenate method, because faster
-        # TODO: Check concatenation!
         DBSCAN_dataset = np.concatenate((DBSCAN_dataset, cluster_labels[:, np.newaxis]), axis=1)
 
         amount_cones = len(set(cluster_labels))

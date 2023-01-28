@@ -480,7 +480,7 @@ class ConeLocalizationNode(Node):
             nearest_cones = []
             for x in nearest_x:
                 nearest_cones += clustered_cones_wc_dict[x]
-            nearest_cone = self.get_nearest_cone(clustered_cone, nearest_cones)
+            nearest_cone, closest_distance = self.get_nearest_cone(clustered_cone, nearest_cones)
             x_offset.append(clustered_cone[0] - nearest_cone[0])
             y_offset.append(clustered_cone[1] - nearest_cone[1])
         x_offset_mean, y_offset_mean = np.mean(x_offset), np.mean(y_offset)

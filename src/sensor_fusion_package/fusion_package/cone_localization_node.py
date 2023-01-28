@@ -14,6 +14,9 @@ import math
 import numpy as np
 from sklearn.cluster import DBSCAN
 from matplotlib import pyplot as plt
+from typing import List
+from collections import OrderedDict
+import bisect
 
 
 # cone_color_code: blue = 0, orange = 1, yellow = 2
@@ -29,7 +32,7 @@ class ConeLocalizationNode(Node):
         self.track = []
         self.autonomous_track = []
         self.startup_position = []
-        self.calibrated_position = None
+        self.calibrated_position = []
         self.relative_position = []
         self.start = []
         self.start_arrived = False
@@ -89,25 +92,31 @@ class ConeLocalizationNode(Node):
         position = np.asarray([odom.pose.pose.position.x, odom.pose.pose.position.y, np.rad2deg(-y)])
         if len(self.startup_position) == 0:
             self.startup_position = position
-        if self.calibrated_position is None:
-            self.calibrated_position = position
 
         rel_pos = [self.sign * (position[0] - self.startup_position[0]),
                    self.sign * (position[1] - self.startup_position[1]),
                    (self.startup_position[2] - position[2]) % 360]
         self.relative_position = rel_pos
+
+        if len(self.calibrated_position) == 0:
+            self.calibrated_position = self.relative_position
+
         cone_labels = labels.cones
 
         # Checking condition for calibration.
         # If last calibrated position is further away then 0.5 meter, then calibrate
-        position_delta = self.get_euclidean_distance(
-                cone1=[self.calibrated_position[0], self.calibrated_position[1]],
-                cone2=[position[0],position[1]])
+        position_delta = self.get_euclidean_distance(cone1=self.calibrated_position, cone2=self.relative_position)
 
         if position_delta >= 0.5 and len(self.cones_clustered) > 0:
-            self.calibrate_position(labels=labels, lidar_data=laser, position=rel_pos)
+            x_offset, y_offset = self.calibrate_position(labels=labels, lidar_data=laser, position=rel_pos)
+            self.calibrated_position = [self.relative_position[0] + x_offset,
+                                        self.relative_position[1] + y_offset,
+                                        self.relative_position[2]]
+            self.get_logger().log(f"Offset between relative pos and calibrated pos is "
+                                  f"{self.get_euclidean_distance(self.relative_position, self.calibrated_position)}")
+            self.relative_position = self.calibrated_position
 
-        cones = self.received_labels(cone_labels, lidar_data, rel_pos)
+        cones = self.received_labels(cone_labels, lidar_data, self.relative_position)
         for cone in cones:
             self.cones_new.append(cone)
 
@@ -246,7 +255,7 @@ class ConeLocalizationNode(Node):
 
         return checkpoint_commands
 
-    def get_nearest_cone(self, reference_cone, cone_list):
+    def get_nearest_cone(self, reference_cone: list, cone_list: List[list]):
 
         if len(cone_list) == 0:
             return None
@@ -449,16 +458,36 @@ class ConeLocalizationNode(Node):
         y = distance * np.sin(-rad)
         return x, y
 
+    def calibrate_position(self, labels, lidar_data, position, block_size=2):
+        received_cones_without_calibration = self.received_labels(labels, lidar_data, position)
+        clustered_cones_without_calibration = self.use_dbscan(data_set=received_cones_without_calibration)
 
-    @staticmethod
-    def calculate_range_and_angle(cone: tuple, robot: tuple) -> tuple:
-        range = ConeLocalizationNode.get_euclidean_distance(cone, robot)
-        angle = math.atan((cone[1] - robot[1]) / (cone[0] - robot[0]))
-        return range, angle
+        # Dictionary by x. Cones are added to one key, if their x value rounded to the closest multiple of 2 is same
+        # For example: (4.2, 3) and (5.3, 10) are added to one key 4 (as 4.2 and 5.3 rounded to the closest multiple
+        # are 4)
+        clustered_cones_wc_dict = OrderedDict()
+        for cone in clustered_cones_without_calibration:
+            x_key_rounded = (cone[0] // block_size) * block_size
+            if x_key_rounded not in clustered_cones_wc_dict:
+                clustered_cones_wc_dict[x_key_rounded] = []
+            clustered_cones_wc_dict[x_key_rounded].append(cone)
+        x_keys = list(clustered_cones_wc_dict.keys())
 
-    def calibrate_position(self, labels, lidar_data, position):
-        for cone in self.cones_clustered:
-            rangee, angle = self.calculate_range_and_angle(cone, position)
+        x_offset, y_offset = [], []
+
+        for clustered_cone in self.cones_clustered:
+            # Finding the nearest cone by x
+            ind = bisect.bisect_left(x_keys, clustered_cone[0])
+            nearest_x = clustered_cones_wc_dict[x_keys[max(ind - 1, 0):ind + 1]]
+            nearest_cones = []
+            for x in nearest_x:
+                nearest_cones += clustered_cones_wc_dict[x]
+            nearest_cone = self.get_nearest_cone(clustered_cone, nearest_cones)
+            x_offset.append(clustered_cone[0] - nearest_cone[0])
+            y_offset.append(clustered_cone[1] - nearest_cone[1])
+        x_offset_mean, y_offset_mean = np.mean(x_offset), np.mean(y_offset)
+
+        return x_offset_mean, y_offset_mean
 
 
     def received_labels(self, labels, lidar_data, position) -> list:

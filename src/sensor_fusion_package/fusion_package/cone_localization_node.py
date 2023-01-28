@@ -476,7 +476,7 @@ class ConeLocalizationNode(Node):
         for clustered_cone in self.cones_clustered:
             # Finding the nearest cone by x
             ind = bisect.bisect_left(x_keys, clustered_cone[0])
-            nearest_x = clustered_cones_wc_dict[x_keys[max(ind - 1, 0):ind + 1]]
+            nearest_x = x_keys[max(ind - 1, 0):ind + 1]
             nearest_cones = []
             for x in nearest_x:
                 nearest_cones += clustered_cones_wc_dict[x]

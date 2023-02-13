@@ -21,7 +21,6 @@ class PathIntegration(Node):
         self.vel = Twist()
         self.odom = Odometry()
 
-
     def timer_callback(self):
         # TODO: path integration
         # Distinct between cases: standing still, turning on spot or drivinng straight or driving curve
@@ -56,13 +55,12 @@ class PathIntegration(Node):
             delta_x = delta_x_ego * np.cos(yaw) - delta_y_ego * np.sin(yaw)
             delta_y = delta_x_ego * np.sin(yaw) + delta_y_ego * np.cos(yaw)
 
-
-
         position = [position[0] + delta_x, position[1] + delta_y]
         yaw += delta_yaw
+        quaternion = tf_transformations.quaternion_from_euler(0, 0, yaw)
+
         self.odom.pose.pose.position.x = position[0]
         self.odom.pose.pose.position.y = position[1]
-        quaternion = tf_transformations.quaternion_from_euler(0, 0, yaw)
         self.odom.pose.pose.orientation.x = quaternion[0]
         self.odom.pose.pose.orientation.y = quaternion[1]
         self.odom.pose.pose.orientation.z = quaternion[2]
@@ -70,6 +68,18 @@ class PathIntegration(Node):
 
         self.position_publisher.publish(self.odom)
 
-
     def vel_callback(self, data):
         self.vel = data
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = PathIntegration()
+    rclpy.spin(node)
+
+    node.destroy_node()
+    rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()

@@ -21,7 +21,8 @@ setup(
     entry_points={
         'console_scripts': [
             'controller_node = movement_controller.controller_node:main',
-            'autonomous_node = movement_controller.autonomous:main'
+            'autonomous_node = movement_controller.autonomous:main',
+            'path_integration_node = movement_controller.path_integration:main'
         ],
     },
 )

@@ -17,7 +17,7 @@ class AutonomousController(Node):
 
         self.speed_publisher = self.create_publisher(Twist, '/cmd_vel', 10)
         self.track_subscriber = self.create_subscription(Track, '/track', self.received_track_callback, 10)
-        self.odom_subscriber = self.create_subscription(Odometry, '/odom', self.received_odom_callback, 10)
+        self.odom_subscriber = self.create_subscription(Odometry, '/codom', self.received_odom_callback, 10)
         self.drive_publisher = self.create_publisher(Bool, '/drive', 10)
 
         self.sign = -1
@@ -25,8 +25,8 @@ class AutonomousController(Node):
         self.start_position = None
         self.next_target = None
         self.target_queue = None
-        self.distance_threshold = 0.1 # 5cm
-        self.angular_threshold = 0.1
+        self.distance_threshold = 0.05 # 5cm
+        self.angular_threshold = 0.03
         self.lin_vel = 0
 
     def received_track_callback(self, track):
@@ -37,15 +37,15 @@ class AutonomousController(Node):
         self.target_queue = [[x, goal_y[idx]] for idx, x in enumerate(goal_x)]
         print(self.target_queue)
         if len(self.target_queue) > 0:
-            self.next_target = self.target_queue.pop()
+            self.next_target = self.target_queue.pop(0)
 
     def received_odom_callback(self, odom):
         if not self.next_target is None:
             # if position is given relative have to check that
-            delta_x = self.sign*(odom.pose.pose.position.x - self.start_position.pose.pose.position.x)
-            delta_y = self.sign*(odom.pose.pose.position.y - self.start_position.pose.pose.position.y)
-            target_distance = np.sqrt((self.next_target[0] - delta_x) ** 2 + (self.next_target[1] - delta_y) ** 2)
-
+            delta_x = -odom.pose.pose.position.x - self.start_position.pose.pose.position.x
+            delta_y = -odom.pose.pose.position.y - self.start_position.pose.pose.position.y
+            target_distance = np.sqrt((self.next_target[0] + odom.pose.pose.position.x) ** 2 + (self.next_target[1] + odom.pose.pose.position.y) ** 2)
+            print(self.next_target[0], self.next_target[1])
             if target_distance <= self.distance_threshold:
                 self.get_logger().info("reached next target point")
                 if len(self.target_queue) >= 1:
@@ -66,24 +66,24 @@ class AutonomousController(Node):
             _, _, old_yaw = tf_transformations.euler_from_quaternion(
                 [self.start_position.pose.pose.orientation.x, self.start_position.pose.pose.orientation.y, self.start_position.pose.pose.orientation.z,
                  self.start_position.pose.pose.orientation.w])
-            delta_yaw = new_yaw - old_yaw
+            delta_yaw = new_yaw + np.pi
 
-            angle_to_target = self.angle_from_points([delta_x, delta_y], self.next_target)
+            angle_to_target = self.angle_from_points([odom.pose.pose.position.x, odom.pose.pose.position.y], self.next_target)
 
             print("goal: ")
             print("delta_yaw:", delta_yaw)
             print("distance:", target_distance)
-            print("angle:", delta_yaw - angle_to_target)
-            twist = Twist()
+            print("angle:", self.normalize_radians(abs(((delta_yaw - angle_to_target) % (np.pi*2)))))
 
-            if abs(delta_yaw - angle_to_target) > self.angular_threshold:
+            twist = Twist()
+            if abs(self.normalize_radians(abs(((delta_yaw - angle_to_target) % (np.pi*2))))) > self.angular_threshold:
                 print("drehen")
-                angular_vel = self.target_dynamic(delta_yaw, angle_to_target, 1.)
-                twist.angular.z = angular_vel * 2
+                angular_vel = self.target_dynamic(delta_yaw, angle_to_target, 1.)*2
+                twist.angular.z = angular_vel
                 self.lin_vel = .0
             else:
                 print("vorwärts")
-                self.lin_vel += 0.001
+                self.lin_vel = .05
 
             twist.linear.x = self.lin_vel
             self.speed_publisher.publish(twist)
@@ -116,7 +116,7 @@ class AutonomousController(Node):
     def angle_from_points(a, b):
         z = a[0] - b[0]
         x = a[1] - b[1]
-        return math.atan2(x, z)
+        return (math.atan2(x, z) - np.pi) % (np.pi*2)
 
 
 def main(args=None):

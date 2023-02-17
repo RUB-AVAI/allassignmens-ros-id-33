@@ -117,7 +117,7 @@ class ConeLocalizationNode(Node):
                 self.cones_new = []
             # cluster already clustered cones
             if len(self.cones_clustered) > 0:
-                self.cones_clustered = self.use_dbscan(self.cones_clustered, _min_samples=1, _eps=0.1)
+                self.cones_clustered = self.use_dbscan(self.cones_clustered, _min_samples=1, _eps=0.15)
 
                 cone_knowledge = [[], [], []]
                 for cone_known in self.cones_clustered:

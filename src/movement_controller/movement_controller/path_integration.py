@@ -1,6 +1,7 @@
+import builtin_interfaces
 import rclpy
 from rclpy.node import Node
-
+import time
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 import tf_transformations
@@ -17,9 +18,12 @@ class PathIntegration(Node):
         self.vel_subscriber = self.create_subscription(Twist, '/cmd_vel', self.vel_callback, 10)
         self.timer = self.create_timer(self.delta_t, self.timer_callback)
         self.position_publisher = self.create_publisher(Odometry, '/codom', 10)
+        self.odom_sub = self.create_subscription(Odometry, '/odom', self.odom_callback, 10)
 
         self.vel = Twist()
         self.odom = Odometry()
+
+        self.odom_start = None
 
     def timer_callback(self):
         # TODO: path integration
@@ -65,11 +69,27 @@ class PathIntegration(Node):
         self.odom.pose.pose.orientation.y = quaternion[1]
         self.odom.pose.pose.orientation.z = quaternion[2]
         self.odom.pose.pose.orientation.w = quaternion[3]
-
+        t = builtin_interfaces.msg.Time()
+        now = time.time()
+        sec = int(now)
+        nsec = int((now - sec) * 10 ** 9)
+        t.sec = sec
+        t.nanosec = nsec
+        self.odom.header.stamp = t
+        out = "path_integration: x: " + str(self.odom.pose.pose.position.x) + " y: " + str(self.odom.pose.pose.position.y) + " rotation: " + str(np.rad2deg(yaw))
+        self.get_logger().info(out)
         self.position_publisher.publish(self.odom)
 
     def vel_callback(self, data):
         self.vel = data
+
+    def odom_callback(self, data):
+        if self.odom_start == None:
+            self.odom_start = data
+        delta_x = self.odom_start.pose.pose.position.x - data.pose.pose.position.x
+        delta_y = self.odom_start.pose.pose.position.y - data.pose.pose.position.y
+        out = "odom_topic: x: " + str(delta_x) + " y: " + str(delta_y)
+        #self.get_logger().info(out)
 
 
 def main(args=None):

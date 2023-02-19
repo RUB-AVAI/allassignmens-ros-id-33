@@ -8,6 +8,7 @@ import tf_transformations
 import numpy as np
 from rclpy.qos import qos_profile_sensor_data, QoSProfile
 from sensor_msgs.msg import LaserScan
+from std_msgs.msg import Float64MultiArray
 
 
 class PathIntegration(Node):
@@ -20,10 +21,15 @@ class PathIntegration(Node):
         self.vel_subscriber = self.create_subscription(Twist, '/cmd_vel', self.vel_callback, 10)
         self.timer = self.create_timer(self.delta_t, self.timer_callback)
         self.position_publisher = self.create_publisher(Odometry, '/codom', 10)
-        self.odom_sub = self.create_subscription(LaserScan, '/scan', self.odom_callback, qos_profile=qos_profile_sensor_data)
+        self.calibration_subscriber = self.create_subscription(Float64MultiArray, '/calibration', self.calibration_callback, 10)
 
         self.vel = Twist()
         self.odom = Odometry()
+
+        self.calibrated_x = 0
+        self.calibrated_y = 0
+        self.calibrated_angle = 0
+
         yaw_offset = np.pi
         x, y, z, w = tf_transformations.quaternion_from_euler(0, 0, yaw_offset)
         self.odom.pose.pose.orientation.x = x
@@ -35,7 +41,7 @@ class PathIntegration(Node):
 
     def timer_callback(self):
         # TODO: path integration
-        # Distinct between cases: standing still, turning on spot or drivinng straight or driving curve
+        # Distinct between cases: standing still, turning on spot or driving straight or driving curve
 
         _, _, yaw = tf_transformations.euler_from_quaternion(
             [self.odom.pose.pose.orientation.x, self.odom.pose.pose.orientation.y,
@@ -69,14 +75,16 @@ class PathIntegration(Node):
 
         position = [position[0] + delta_x, position[1] + delta_y]
         yaw += delta_yaw
-        quaternion = tf_transformations.quaternion_from_euler(0, 0, yaw)
+        quaternion = tf_transformations.quaternion_from_euler(0, 0, (yaw + self.calibrated_angle) % (np.pi*2))
 
-        self.odom.pose.pose.position.x = position[0]
-        self.odom.pose.pose.position.y = position[1]
+        self.odom.pose.pose.position.x = position[0] + self.calibrated_x
+        self.odom.pose.pose.position.y = position[1] + self.calibrated_y
         self.odom.pose.pose.orientation.x = quaternion[0]
         self.odom.pose.pose.orientation.y = quaternion[1]
         self.odom.pose.pose.orientation.z = quaternion[2]
         self.odom.pose.pose.orientation.w = quaternion[3]
+
+        # add timestamp to odom header for synchronized callback
         t = builtin_interfaces.msg.Time()
         now = time.time()
         sec = int(now)
@@ -84,18 +92,18 @@ class PathIntegration(Node):
         t.sec = sec
         t.nanosec = nsec
         self.odom.header.stamp = t
-        # out = "path_integration: x: " + str(self.odom.pose.pose.position.x) + " y: " + str(self.odom.pose.pose.position.y) + " rotation: " + str(np.rad2deg(yaw))
-        # out = "odom  timestamp: " + str(self.odom.header.stamp.sec) + "." + str(self.odom.header.stamp.nanosec)
-        # self.get_logger().info(out)
+
         self.position_publisher.publish(self.odom)
 
     def vel_callback(self, data):
         self.vel = data
 
-    def odom_callback(self, data):
-        # out = "lidar timestamp: " + str(data.header.stamp.sec) + "." + str(data.header.stamp.nanosec)
-        # self.get_logger().info(out)
-        pass
+    #saving the new offsets
+    def calibration_callback(self, data):
+        offsets = data.data
+        self.calibrated_x += offsets[0]
+        self.calibrated_y += offsets[1]
+        self.calibrated_angle += offsets[2]
 
 
 def main(args=None):

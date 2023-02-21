@@ -6,8 +6,7 @@ from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 import tf_transformations
 import numpy as np
-from rclpy.qos import qos_profile_sensor_data, QoSProfile
-from sensor_msgs.msg import LaserScan
+from rclpy.qos import QoSProfile
 from std_msgs.msg import Float64MultiArray
 
 
@@ -21,14 +20,10 @@ class PathIntegration(Node):
         self.vel_subscriber = self.create_subscription(Twist, '/cmd_vel', self.vel_callback, 10)
         self.timer = self.create_timer(self.delta_t, self.timer_callback)
         self.position_publisher = self.create_publisher(Odometry, '/codom', 10)
-        self.calibration_subscriber = self.create_subscription(Float64MultiArray, '/calibration', self.calibration_callback, 10)
+        self.calibration_subscriber = self.create_subscription(Float64MultiArray, '/position_calibration', self.calibration_callback, 10)
 
         self.vel = Twist()
         self.odom = Odometry()
-
-        self.calibrated_x = 0
-        self.calibrated_y = 0
-        self.calibrated_angle = 0
 
         yaw_offset = np.pi
         x, y, z, w = tf_transformations.quaternion_from_euler(0, 0, yaw_offset)
@@ -75,10 +70,10 @@ class PathIntegration(Node):
 
         position = [position[0] + delta_x, position[1] + delta_y]
         yaw += delta_yaw
-        quaternion = tf_transformations.quaternion_from_euler(0, 0, (yaw + self.calibrated_angle) % (np.pi*2))
+        quaternion = tf_transformations.quaternion_from_euler(0, 0, yaw)
 
-        self.odom.pose.pose.position.x = position[0] + self.calibrated_x
-        self.odom.pose.pose.position.y = position[1] + self.calibrated_y
+        self.odom.pose.pose.position.x = position[0]
+        self.odom.pose.pose.position.y = position[1]
         self.odom.pose.pose.orientation.x = quaternion[0]
         self.odom.pose.pose.orientation.y = quaternion[1]
         self.odom.pose.pose.orientation.z = quaternion[2]
@@ -92,7 +87,7 @@ class PathIntegration(Node):
         t.sec = sec
         t.nanosec = nsec
         self.odom.header.stamp = t
-
+        #self.get_logger().info(str(self.odom.pose.pose.position.x) + "; " + str(self.odom.pose.pose.position.y) + "; " + str(yaw * 180/np.pi))
         self.position_publisher.publish(self.odom)
 
     def vel_callback(self, data):
@@ -101,9 +96,9 @@ class PathIntegration(Node):
     #saving the new offsets
     def calibration_callback(self, data):
         offsets = data.data
-        self.calibrated_x += offsets[0]
-        self.calibrated_y += offsets[1]
-        self.calibrated_angle += offsets[2]
+        print(offsets)
+        self.odom.pose.pose.position.x += offsets[0]
+        self.odom.pose.pose.position.y += offsets[1]
 
 
 def main(args=None):

@@ -25,8 +25,8 @@ class AutonomousController(Node):
         self.start_position = None
         self.next_target = None
         self.target_queue = None
-        self.distance_threshold = 0.05 # 5cm
-        self.angular_threshold = 0.03
+        self.distance_threshold = 0.08 # 8cm
+        self.angular_threshold = np.deg2rad(.05) # 0,5° Abweichung
         self.lin_vel = 0
 
     def received_track_callback(self, track):
@@ -42,10 +42,7 @@ class AutonomousController(Node):
     def received_odom_callback(self, odom):
         if not self.next_target is None:
             # if position is given relative have to check that
-            delta_x = -odom.pose.pose.position.x - self.start_position.pose.pose.position.x
-            delta_y = -odom.pose.pose.position.y - self.start_position.pose.pose.position.y
             target_distance = np.sqrt((self.next_target[0] + odom.pose.pose.position.x) ** 2 + (self.next_target[1] + odom.pose.pose.position.y) ** 2)
-            print(self.next_target[0], self.next_target[1])
             if target_distance <= self.distance_threshold:
                 self.get_logger().info("reached next target point")
                 if len(self.target_queue) >= 1:
@@ -70,10 +67,6 @@ class AutonomousController(Node):
 
             angle_to_target = self.angle_from_points([odom.pose.pose.position.x, odom.pose.pose.position.y], self.next_target)
 
-            print("goal: ")
-            print("delta_yaw:", delta_yaw)
-            print("distance:", target_distance)
-            print("angle:", self.normalize_radians(abs(((delta_yaw - angle_to_target) % (np.pi*2)))))
 
             twist = Twist()
             if abs(self.normalize_radians(abs(((delta_yaw - angle_to_target) % (np.pi*2))))) > self.angular_threshold:
@@ -85,6 +78,8 @@ class AutonomousController(Node):
                 print("vorwärts")
                 self.lin_vel = .05
 
+            print("distance:", target_distance)
+            print("angle:", self.normalize_radians(abs(((delta_yaw - angle_to_target) % (np.pi*2)))))
             twist.linear.x = self.lin_vel
             self.speed_publisher.publish(twist)
 

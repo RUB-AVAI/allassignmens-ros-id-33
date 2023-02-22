@@ -69,7 +69,7 @@ class AutonomousController(Node):
 
 
             twist = Twist()
-            if abs(self.normalize_radians(abs(((delta_yaw - angle_to_target) % (np.pi*2))))) > self.angular_threshold:
+            if abs(self.normalize_radians(delta_yaw - angle_to_target)) > self.angular_threshold:
                 print("drehen")
                 angular_vel = self.target_dynamic(delta_yaw, angle_to_target, 1.)*2
                 twist.angular.z = angular_vel
@@ -111,7 +111,7 @@ class AutonomousController(Node):
     def angle_from_points(a, b):
         z = a[0] - b[0]
         x = a[1] - b[1]
-        return (math.atan2(x, z) - np.pi) % (np.pi*2)
+        return (math.atan2(x, z) - np.pi)
 
 
 def main(args=None):

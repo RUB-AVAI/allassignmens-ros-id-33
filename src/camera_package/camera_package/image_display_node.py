@@ -11,6 +11,8 @@ from threading import Thread
 from .hmi import Ui_MainWindow
 from datetime import datetime, timezone
 
+from avai_messages.msg import Track
+from nav_msgs.msg import Odometry
 
 class ImageDisplayNode(Node):
     # simple node to show images from image_processing_node and to control camera_node
@@ -31,7 +33,7 @@ class ImageDisplayNode(Node):
         # uncomment to see raw images as well note that this will use more bandwidth
         self.raw_images_subscription_ = self.create_subscription(Image, 'raw_images', self.raw_callback, 10)
         self.camera_ctrl_publisher_ = self.create_publisher(Float64, '/camera/freq', 10)
-        self.lidar_graph_publisher_ = self.create_publisher(Bool, '/lidar/graph', 10)
+        self.lidar_graph_publisher_ = self.create_publisher(Track, '/track', 10)
         self.shutter_publisher_ = self.create_publisher(Bool, '/camera/shutter', 10)
         self.bridge = CvBridge()
 
@@ -80,9 +82,12 @@ class ImageDisplayNode(Node):
         # cv2.imwrite(filename, frame)
 
     def display_lidar_graph_(self):
-        msg = Bool()
-        msg.data = True
-        self.get_logger().info('graph request->')
+        msg = Track()
+        odom = Odometry()
+        msg.start = odom
+        msg.x = [0.5, 0.7, 1., 1.2]
+        msg.y = [0.5, 0.5, 0., 0.5]
+        self.get_logger().info('new Track->')
         self.lidar_graph_publisher_.publish(msg)
 
 

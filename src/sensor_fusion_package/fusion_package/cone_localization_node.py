@@ -39,7 +39,7 @@ class ConeLocalizationNode(Node):
         self.start_arrived = False
         self.next_drive_commands = []
         self.robot_state = 0
-        self.robot_state_list = ["detecting_cones",  "driving", "calibrating_position"]
+        self.robot_state_list = ["detecting_cones",  "driving", "calibrating_position", "rotating_for_information"]
 
         # variables for DBSCAN
         self.count_for_DBSCAN = 0
@@ -56,10 +56,10 @@ class ConeLocalizationNode(Node):
         self.odomfilt = message_filters.Subscriber(self, Odometry, '/codom')
         self.labelfilt = message_filters.Subscriber(self, Cones, '/images/labels')
         self.draw_synchronizer = message_filters.ApproximateTimeSynchronizer([self.laserfilt, self.odomfilt],
-                                                                             queue_size=500, slop=.2)
+                                                                             queue_size=500, slop=.1)
         self.draw_synchronizer.registerCallback(self.synchronized_callback)
         self.cone_synchronizer = message_filters.ApproximateTimeSynchronizer(
-            [self.laserfilt, self.odomfilt, self.labelfilt], queue_size=500, slop=.2)
+            [self.laserfilt, self.odomfilt, self.labelfilt], queue_size=500, slop=.1)
         self.cone_synchronizer.registerCallback(self.fusion_callback)
 
         # subscriber and publisher for driving mission
@@ -92,7 +92,7 @@ class ConeLocalizationNode(Node):
             [odom.pose.pose.orientation.x, odom.pose.pose.orientation.y, odom.pose.pose.orientation.z,
              odom.pose.pose.orientation.w])
 
-        self.position = [-odom.pose.pose.position.x, odom.pose.pose.position.y, np.rad2deg(y)]
+        self.position = [odom.pose.pose.position.x, odom.pose.pose.position.y, np.rad2deg(y)]
 
         cone_labels = labels.cones
         cones = self.received_labels(cone_labels, lidar_data, self.position)
@@ -108,7 +108,7 @@ class ConeLocalizationNode(Node):
             # cluster new cones and append them to cones_clustered
 
             if len(self.cones_new) > 0:
-                clustered_cones = self.use_dbscan(self.cones_new, _min_samples=6, _eps=0.15)
+                clustered_cones = self.use_dbscan(self.cones_new, _min_samples=self.RATE_OF_DBSCAN, _eps=0.15)
                 for c in clustered_cones:
                     self.cones_clustered.append(c)
                 self.cones_new = []
@@ -148,7 +148,7 @@ class ConeLocalizationNode(Node):
         eps_for_DBSCAN = .04
         min_samples_for_DBSCAN = 4
         max_distance = .3
-        distance_threshold = 0.1
+        distance_threshold = 0.2
 
         offset_x_list = []
         offset_y_list = []
@@ -362,7 +362,7 @@ class ConeLocalizationNode(Node):
             [odom.pose.pose.orientation.x, odom.pose.pose.orientation.y, odom.pose.pose.orientation.z,
              odom.pose.pose.orientation.w])
 
-        position = [-odom.pose.pose.position.x, -odom.pose.pose.position.y, np.rad2deg(y)]
+        position = [odom.pose.pose.position.x, odom.pose.pose.position.y, np.rad2deg(y)]
 
         self.position = [position[0], position[1], position[2]]
         l_data = []
@@ -522,7 +522,7 @@ class ConeLocalizationNode(Node):
             end += offset
             shift = difference * 1 / 6
             cone_distances = lidar_data[round(start + shift):round(end - shift)]
-            cone_distances = list(filter(lambda x: 0 < x < 2.5, cone_distances))
+            cone_distances = list(filter(lambda x: 0 < x < 1.9, cone_distances))
 
             if len(cone_distances) < 2:
                 continue

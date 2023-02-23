@@ -68,7 +68,7 @@ class PathIntegration(Node):
             delta_x = delta_x_ego * np.cos(yaw) - delta_y_ego * np.sin(yaw)
             delta_y = delta_x_ego * np.sin(yaw) + delta_y_ego * np.cos(yaw)
 
-        position = [position[0] + delta_x, position[1] + delta_y]
+        position = [position[0] - delta_x, position[1] - delta_y]
         yaw += delta_yaw
         quaternion = tf_transformations.quaternion_from_euler(0, 0, yaw)
 
@@ -87,7 +87,7 @@ class PathIntegration(Node):
         t.sec = sec
         t.nanosec = nsec
         self.odom.header.stamp = t
-        #self.get_logger().info(str(self.odom.pose.pose.position.x) + "; " + str(self.odom.pose.pose.position.y) + "; " + str(yaw * 180/np.pi))
+        self.get_logger().info(str(self.odom.pose.pose.position.x) + "; " + str(self.odom.pose.pose.position.y) + "; " + str(yaw * 180/np.pi))
         self.position_publisher.publish(self.odom)
 
     def vel_callback(self, data):
@@ -97,18 +97,15 @@ class PathIntegration(Node):
     def calibration_callback(self, data):
         offsets = data.data
         print(offsets)
-        self.odom.pose.pose.position.x += offsets[0]
-        self.odom.pose.pose.position.y += offsets[1]
+        self.odom.pose.pose.position.x -= offsets[0]
+        self.odom.pose.pose.position.y -= offsets[1]
 
 
 def main(args=None):
     rclpy.init(args=args)
     node = PathIntegration()
-
     qos = QoSProfile(depth=10)
-
     rclpy.spin(node)
-
     node.destroy_node()
     rclpy.shutdown()
 

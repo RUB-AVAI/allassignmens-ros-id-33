@@ -8,7 +8,7 @@ from avai_messages.msg import Track
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 import tf_transformations
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, Float64MultiArray
 
 
 class AutonomousController(Node):
@@ -19,13 +19,16 @@ class AutonomousController(Node):
         self.track_subscriber = self.create_subscription(Track, '/track', self.received_track_callback, 10)
         self.odom_subscriber = self.create_subscription(Odometry, '/codom', self.received_odom_callback, 10)
         self.drive_publisher = self.create_publisher(Bool, '/drive', 10)
+        self.rotation_subscriber = self.create_subscription(Float64MultiArray, '/rotation', self.rotation_callback, 10)
 
         self.sign = -1
 
+        self.rotation_state = False
+        self.rotation_target_angle = None
         self.start_position = None
         self.next_target = None
         self.target_queue = None
-        self.distance_threshold = 0.08 # 8cm
+        self.distance_threshold = 0.03 # 8cm
         self.angular_threshold = np.deg2rad(.05) # 0,5° Abweichung
         self.lin_vel = 0
 
@@ -40,13 +43,33 @@ class AutonomousController(Node):
             self.next_target = self.target_queue.pop(0)
 
     def received_odom_callback(self, odom):
-        if not self.next_target is None:
+        if self.rotation_state:
+            _, _, current_yaw = tf_transformations.euler_from_quaternion(
+                [odom.pose.pose.orientation.x, odom.pose.pose.orientation.y, odom.pose.pose.orientation.z,
+                 odom.pose.pose.orientation.w])
+            current_yaw += np.pi
+            angle_to_target_angle = self.normalize_radians(current_yaw - self.rotation_target_angle)
+            if abs(angle_to_target_angle) > self.angular_threshold:
+                twist = Twist()
+                print("drehen")
+                angular_vel = self.target_dynamic(current_yaw, current_yaw - self.rotation_target_angle, 1.) * 2
+                twist.angular.z = angular_vel
+                self.speed_publisher.publish(twist)
+
+            else:
+                print("angle arrived")
+                msg_bool = Bool()
+                msg_bool.data = False
+                self.drive_publisher.publish(msg_bool)
+
+        elif not self.next_target is None:
             # if position is given relative have to check that
-            target_distance = np.sqrt((self.next_target[0] + odom.pose.pose.position.x) ** 2 + (self.next_target[1] + odom.pose.pose.position.y) ** 2)
+            print(self.next_target)
+            target_distance = np.sqrt((self.next_target[0] - odom.pose.pose.position.x) ** 2 + (self.next_target[1] - odom.pose.pose.position.y) ** 2)
             if target_distance <= self.distance_threshold:
                 self.get_logger().info("reached next target point")
                 if len(self.target_queue) >= 1:
-                    self.next_target = self.target_queue.pop()
+                    self.next_target = self.target_queue.pop(0)
                 else:
                     self.next_target = None
                     self.speed_publisher.publish(Twist()) # values should all be zero
@@ -60,13 +83,9 @@ class AutonomousController(Node):
             _, _, new_yaw = tf_transformations.euler_from_quaternion(
                 [odom.pose.pose.orientation.x, odom.pose.pose.orientation.y, odom.pose.pose.orientation.z,
                  odom.pose.pose.orientation.w])
-            _, _, old_yaw = tf_transformations.euler_from_quaternion(
-                [self.start_position.pose.pose.orientation.x, self.start_position.pose.pose.orientation.y, self.start_position.pose.pose.orientation.z,
-                 self.start_position.pose.pose.orientation.w])
             delta_yaw = new_yaw + np.pi
 
             angle_to_target = self.angle_from_points([odom.pose.pose.position.x, odom.pose.pose.position.y], self.next_target)
-
 
             twist = Twist()
             if abs(self.normalize_radians(delta_yaw - angle_to_target)) > self.angular_threshold:
@@ -90,6 +109,10 @@ class AutonomousController(Node):
             twist.angular.z = angular_vel
             self.speed_publisher.publish(twist)
             """
+
+    def rotation_callback(self, data):
+        self.rotation_target_angle = data.data
+        self.rotation_state = True
 
     @staticmethod
     def target_dynamic(robot_orientation, target_orientation, turning_speed):

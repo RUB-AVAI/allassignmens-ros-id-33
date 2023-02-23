@@ -1,5 +1,7 @@
 import sys
 import os
+
+import numpy as np
 from cv_bridge import CvBridge
 from PyQt5 import QtWidgets, QtGui
 import rclpy
@@ -33,7 +35,7 @@ class ImageDisplayNode(Node):
         # uncomment to see raw images as well note that this will use more bandwidth
         self.raw_images_subscription_ = self.create_subscription(Image, 'raw_images', self.raw_callback, 10)
         self.camera_ctrl_publisher_ = self.create_publisher(Float64, '/camera/freq', 10)
-        self.lidar_graph_publisher_ = self.create_publisher(Track, '/track', 10)
+        self.lidar_graph_publisher_ = self.create_publisher(Float64, '/rotation', 10)
         self.shutter_publisher_ = self.create_publisher(Bool, '/camera/shutter', 10)
         self.bridge = CvBridge()
 
@@ -82,11 +84,8 @@ class ImageDisplayNode(Node):
         # cv2.imwrite(filename, frame)
 
     def display_lidar_graph_(self):
-        msg = Track()
-        odom = Odometry()
-        msg.start = odom
-        msg.x = [0.5, 0.7, 1., 1.2]
-        msg.y = [0.5, 0.5, 0., 0.5]
+        msg = Float64()
+        msg.data = np.deg2rad(180)
         self.get_logger().info('new Track->')
         self.lidar_graph_publisher_.publish(msg)
 

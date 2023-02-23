@@ -8,7 +8,7 @@ from avai_messages.msg import Track
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 import tf_transformations
-from std_msgs.msg import Bool, Float64MultiArray
+from std_msgs.msg import Bool, Float64
 
 
 class AutonomousController(Node):
@@ -19,9 +19,7 @@ class AutonomousController(Node):
         self.track_subscriber = self.create_subscription(Track, '/track', self.received_track_callback, 10)
         self.odom_subscriber = self.create_subscription(Odometry, '/codom', self.received_odom_callback, 10)
         self.drive_publisher = self.create_publisher(Bool, '/drive', 10)
-        self.rotation_subscriber = self.create_subscription(Float64MultiArray, '/rotation', self.rotation_callback, 10)
-
-        self.sign = -1
+        self.rotation_subscriber = self.create_subscription(Float64, '/rotation', self.rotation_callback, 10)
 
         self.rotation_state = False
         self.rotation_target_angle = None
@@ -30,7 +28,6 @@ class AutonomousController(Node):
         self.target_queue = None
         self.distance_threshold = 0.03 # 8cm
         self.angular_threshold = np.deg2rad(.05) # 0,5° Abweichung
-        self.lin_vel = 0
 
     def received_track_callback(self, track):
         self.get_logger().info("<- new track")
@@ -48,17 +45,20 @@ class AutonomousController(Node):
                 [odom.pose.pose.orientation.x, odom.pose.pose.orientation.y, odom.pose.pose.orientation.z,
                  odom.pose.pose.orientation.w])
             current_yaw += np.pi
-            angle_to_target_angle = self.normalize_radians(current_yaw - self.rotation_target_angle)
-            if abs(angle_to_target_angle) > self.angular_threshold:
+            angle_to_target = current_yaw - self.rotation_target_angle
+
+            print(angle_to_target)
+            if abs(self.normalize_radians(angle_to_target)) > self.angular_threshold:
                 twist = Twist()
-                print("drehen")
-                angular_vel = self.target_dynamic(current_yaw, current_yaw - self.rotation_target_angle, 1.) * 2
+                angular_vel = self.target_dynamic(current_yaw, self.rotation_target_angle, 1.) * 2
                 twist.angular.z = angular_vel
                 self.speed_publisher.publish(twist)
 
             else:
                 print("angle arrived")
                 msg_bool = Bool()
+                self.rotation_state = False
+                self.rotation_target_angle = None
                 msg_bool.data = False
                 self.drive_publisher.publish(msg_bool)
 
@@ -134,7 +134,7 @@ class AutonomousController(Node):
     def angle_from_points(a, b):
         z = a[0] - b[0]
         x = a[1] - b[1]
-        return (math.atan2(x, z) - np.pi)
+        return math.atan2(x, z) - np.pi
 
 
 def main(args=None):

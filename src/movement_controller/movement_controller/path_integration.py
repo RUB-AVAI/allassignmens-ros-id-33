@@ -97,8 +97,8 @@ class PathIntegration(Node):
     def calibration_callback(self, data):
         offsets = data.data
         print(offsets)
-        self.odom.pose.pose.position.x -= offsets[0]
-        self.odom.pose.pose.position.y -= offsets[1]
+        self.odom.pose.pose.position.x += offsets[0]
+        self.odom.pose.pose.position.y += offsets[1]
 
 
 def main(args=None):

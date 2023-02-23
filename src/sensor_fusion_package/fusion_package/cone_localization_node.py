@@ -2,7 +2,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data, QoSProfile
 
-from std_msgs.msg import Bool, Float64MultiArray
+from std_msgs.msg import Bool, Float64MultiArray, Float64
 from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import Odometry
 from avai_messages.msg import Cones, Track
@@ -39,7 +39,7 @@ class ConeLocalizationNode(Node):
         self.start_arrived = False
         self.next_drive_commands = []
         self.robot_state = 0
-        self.robot_state_list = ["detecting_cones",  "driving", "calibrating_position", "rotating_for_information"]
+        self.robot_state_list = ["detecting_cones",  "driving", "calibrating_position", "rotating_for_information_right", "detecting_after_rotation", "rotating_for_information_left"]
 
         # variables for DBSCAN
         self.count_for_DBSCAN = 0
@@ -56,24 +56,29 @@ class ConeLocalizationNode(Node):
         self.odomfilt = message_filters.Subscriber(self, Odometry, '/codom')
         self.labelfilt = message_filters.Subscriber(self, Cones, '/images/labels')
         self.draw_synchronizer = message_filters.ApproximateTimeSynchronizer([self.laserfilt, self.odomfilt],
-                                                                             queue_size=500, slop=.1)
+                                                                             queue_size=500, slop=.05)
         self.draw_synchronizer.registerCallback(self.synchronized_callback)
         self.cone_synchronizer = message_filters.ApproximateTimeSynchronizer(
-            [self.laserfilt, self.odomfilt, self.labelfilt], queue_size=500, slop=.1)
+            [self.laserfilt, self.odomfilt, self.labelfilt], queue_size=500, slop=.05)
         self.cone_synchronizer.registerCallback(self.fusion_callback)
 
         # subscriber and publisher for driving mission
         self.trackpublisher = self.create_publisher(Track, '/track', 10)
         self.drivesub = self.create_subscription(Bool, 'drive', self.drive_callback, 10)
+        self.rotation_publisher = self.create_publisher(Float64, '/rotation', 10)
 
         self.calbiration_publisher = self.create_publisher(Float64MultiArray, '/position_calibration', 10)
 
     def drive_callback(self, data):
-        self.robot_state = 2 # calibrate_rotation
+        print("drive_callback")
+        if data.data:
+            self.robot_state = 2 # calibrate_rotation
+        else:
+            self.robot_state = (self.robot_state + 1) % len(self.robot_state_list)
 
     def fusion_callback(self, laser, odom, labels):
 
-        print(self.robot_state_list[self.robot_state])
+        print(self.robot_state_list[self.robot_state], ": ", self.robot_state)
         if self.robot_state == 1:  # if == 0 than robot should detect cones
             return
 
@@ -84,8 +89,10 @@ class ConeLocalizationNode(Node):
             print(offset_x, offset_y)
             self.calbiration_publisher.publish(calibration_message)
             self.robot_state = 0
-
             return
+        elif self.robot_state == 3 or self.robot_state == 5:
+            return
+
 
         lidar_data = np.asarray(laser.ranges[::-1])
         r, p, y = tf_transformations.euler_from_quaternion(
@@ -102,7 +109,7 @@ class ConeLocalizationNode(Node):
 
         self.count_for_DBSCAN += 1
 
-        if self.count_for_DBSCAN == self.RATE_OF_DBSCAN:
+        if (self.count_for_DBSCAN % self.RATE_OF_DBSCAN) == 0:
             self.get_logger().info("using DBSCAN")
 
             # cluster new cones and append them to cones_clustered
@@ -119,26 +126,59 @@ class ConeLocalizationNode(Node):
                 cone_knowledge = [[], [], []]
                 for cone_known in self.cones_clustered:
                     cone_knowledge[int(cone_known[3])].append(cone_known)
-                self.track = self.calculate_track(cone_knowledge)
-                self.autonomous_track = self.calculate_drive(self.track)
 
-                if self.start_arrived: # wir waren bereits am Start, also an den orangen Cones
-                    self.next_drive_commands = self.calculate_next_drive_commands(self.autonomous_track,
-                                                                                  self.position)
-                else:
-                    self.next_drive_commands = self.start
-                    self.start_arrived = True
+                if self.robot_state == 0:
 
-                # publish the track_message
-                track_message = Track()
-                track_message.start = odom
-                drive_x = [checkpoint[0] for checkpoint in self.next_drive_commands]
-                drive_y = [checkpoint[1] for checkpoint in self.next_drive_commands]
-                track_message.x = drive_x
-                track_message.y = drive_y
+                    self.track = self.calculate_track(cone_knowledge)
+                    self.autonomous_track = self.calculate_drive(self.track)
 
-                self.trackpublisher.publish(track_message)
-                self.robot_state = 1
+                    if self.start_arrived: # wir waren bereits am Start, also an den orangen Cones
+                        self.next_drive_commands = self.calculate_next_drive_commands(self.autonomous_track,
+                                                                                      self.position)
+                    else:
+                        self.next_drive_commands = self.start
+                        self.start_arrived = True
+
+                    if self.next_drive_commands is None:
+                        # wir müssen uns rotieren, um Informationen zu sammeln
+                        self.robot_state = 3
+                        print(self.position[2])
+                        target_angle = np.deg2rad(self.position[2] - 40) + np.pi
+                        msg = Float64()
+                        msg.data = target_angle
+                        self.rotation_publisher.publish(msg)
+                        return
+
+                    else:
+
+                        # publish the track_message
+                        track_message = Track()
+                        track_message.start = odom
+                        drive_x = [checkpoint[0] for checkpoint in self.next_drive_commands]
+                        drive_y = [checkpoint[1] for checkpoint in self.next_drive_commands]
+                        track_message.x = drive_x
+                        track_message.y = drive_y
+
+                        if len(track_message.x) == 0:
+                            # wir müssen uns rotieren, um Informationen zu sammeln
+                            self.robot_state = 3
+                            print(self.position[2])
+                            target_angle = np.deg2rad(self.position[2] - 60) + np.pi
+                            msg = Float64()
+                            msg.data = target_angle
+                            self.rotation_publisher.publish(msg)
+                            self.count_for_DBSCAN = 0
+
+                        else:
+                            self.trackpublisher.publish(track_message)
+                            self.robot_state = 1
+
+                elif self.robot_state == 4:
+                    self.robot_state = 5
+                    target_angle = np.deg2rad(self.position[2] + 120) + np.pi
+                    msg = Float64()
+                    msg.data = target_angle
+                    self.rotation_publisher.publish(msg)
 
             self.count_for_DBSCAN = 0  # To prevent overflow
 
@@ -147,12 +187,11 @@ class ConeLocalizationNode(Node):
         #PARAMS FOR FUNCTION
         eps_for_DBSCAN = .04
         min_samples_for_DBSCAN = 4
-        max_distance = .3
+        max_distance = .4
         distance_threshold = 0.2
 
         offset_x_list = []
         offset_y_list = []
-        angle_offset_list = []
         laser = laser.ranges[::-1] # swapped lidar_data
         modified_laser = []
         for i in range(len(laser)):
@@ -172,7 +211,7 @@ class ConeLocalizationNode(Node):
         self.ax.cla()
         self.ax.scatter(self.position[0], self.position[1], color='black', alpha=1)
 
-        self.ax.set_ylim(-2 + +self.position[1], 2 + self.position[1])
+        self.ax.set_ylim(-2 + self.position[1], 2 + self.position[1])
         self.ax.set_xlim(-2 + self.position[0], 2 + self.position[0])
 
         cone_x = []
@@ -215,6 +254,9 @@ class ConeLocalizationNode(Node):
 
     def calculate_track(self, cone_data):
 
+        # params
+        MAX_DIST = .6
+
         # calculate the trackbeginning from orange cone to yellow/blue
         blue_cones = cone_data[0].copy()
         orange_cones = cone_data[1].copy()
@@ -250,16 +292,22 @@ class ConeLocalizationNode(Node):
             blue_track_index = 1
             while len(blue_cones) > 0:
                 cone_blue, cone_distance = self.get_nearest_cone(blue_track[blue_track_index], blue_cones)
-                blue_track.append(cone_blue)
-                blue_cones.remove(cone_blue)
-                blue_track_index += 1
+                if cone_distance < MAX_DIST:
+                    blue_track.append(cone_blue)
+                    blue_cones.remove(cone_blue)
+                    blue_track_index += 1
+                else:
+                    break
 
             yellow_track_index = 1
             while len(yellow_cones) > 0:
                 cone_yellow, cone_distance = self.get_nearest_cone(yellow_track[yellow_track_index], yellow_cones)
-                yellow_track.append(cone_yellow)
-                yellow_cones.remove(cone_yellow)
-                yellow_track_index += 1
+                if cone_distance < MAX_DIST:
+                    yellow_track.append(cone_yellow)
+                    yellow_cones.remove(cone_yellow)
+                    yellow_track_index += 1
+                else:
+                    break
 
             return [blue_track, yellow_track]
         else:
@@ -289,17 +337,14 @@ class ConeLocalizationNode(Node):
     def calculate_next_drive_commands(self, auto_track, position):
 
         robot_position_as_cone = [position[0], position[1], 1, 1]
+
         nearest_checkpoint, distance_to_checkpoint = self.get_nearest_cone(robot_position_as_cone, auto_track)
 
         index_of_current_checkpoint = auto_track.index(nearest_checkpoint)
         next_checkpoint = index_of_current_checkpoint + 1
-        """
-        checkpoint_commands = []
 
-        while len(auto_track) - 1 > next_checkpoint:
-            checkpoint_commands.append(auto_track[next_checkpoint])
-            next_checkpoint += 1
-        """
+        if next_checkpoint > len(auto_track) - 1:
+            return None
         return [auto_track[next_checkpoint]]
 
     def get_nearest_cone(self, reference_cone: list, cone_list: List[list]):
@@ -463,9 +508,10 @@ class ConeLocalizationNode(Node):
 
         track_x = []
         track_y = []
-        for checkpoint in self.next_drive_commands:
-            track_x.append(checkpoint[0])
-            track_y.append(checkpoint[1])
+        if self.next_drive_commands != None:
+            for checkpoint in self.next_drive_commands:
+                track_x.append(checkpoint[0])
+                track_y.append(checkpoint[1])
 
         self.ax.scatter(track_x, track_y, color='tab:gray')
         self.ax.plot(track_x, track_y, color='tab:gray')
@@ -522,7 +568,7 @@ class ConeLocalizationNode(Node):
             end += offset
             shift = difference * 1 / 6
             cone_distances = lidar_data[round(start + shift):round(end - shift)]
-            cone_distances = list(filter(lambda x: 0 < x < 1.9, cone_distances))
+            cone_distances = list(filter(lambda x: 0 < x < 1.7, cone_distances))
 
             if len(cone_distances) < 2:
                 continue

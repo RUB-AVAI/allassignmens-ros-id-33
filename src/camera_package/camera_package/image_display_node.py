@@ -87,7 +87,7 @@ class ImageDisplayNode(Node):
         msg = Float64()
         msg.data = np.deg2rad(180)
         self.get_logger().info('new Track->')
-        self.lidar_graph_publisher_.publish(msg)
+        self.rotation_publisher.publish(msg)
 
 
 def main(args=None):

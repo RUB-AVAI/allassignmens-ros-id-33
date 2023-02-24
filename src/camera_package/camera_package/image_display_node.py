@@ -83,7 +83,7 @@ class ImageDisplayNode(Node):
         # filename = "img/raw/" + str(int(datetime.now(timezone.utc).timestamp() * 1000000)) + ".png"
         # cv2.imwrite(filename, frame)
 
-    def display_lidar_graph_(self):
+    def publish_rotation(self):
         msg = Float64()
         msg.data = np.deg2rad(180)
         self.get_logger().info('new Track->')

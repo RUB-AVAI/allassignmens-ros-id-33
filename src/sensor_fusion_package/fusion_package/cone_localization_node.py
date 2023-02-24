@@ -22,15 +22,14 @@ class ConeLocalizationNode(Node):
     def __init__(self):
         super().__init__('cone_localization_node')
 
-
         # variables for conedetection
         self.cones_new = []
         self.cones_clustered = []
         self.lidar_data = []
 
         # variables for track calculation
-        self.track = []
-        self.autonomous_track = []
+        self.track = None
+        self.autonomous_track = None
         self.calibrated_position = []
         self.position = []
 
@@ -39,14 +38,16 @@ class ConeLocalizationNode(Node):
         self.start_arrived = False
         self.next_drive_commands = []
         self.robot_state = 0
-        self.robot_state_list = ["detecting_cones",  "driving", "calibrating_position", "rotating_for_information_right", "detecting_after_rotation", "rotating_for_information_left"]
+        self.robot_state_list = ["detecting_cones", "driving", "calibrating_position", "rotating_for_information_right",
+                                 "detecting_after_rotation", "rotating_for_information_left"]
 
         # variables for DBSCAN
         self.count_for_DBSCAN = 0
-        self.RATE_OF_DBSCAN = 8
+        self.RATE_OF_DBSCAN = 12
 
         # constants
-        self.avarage_radius = .0
+        self.avarage_radius = .002
+        self.calibration_bias = .3
 
         # variables for plotting
         self.fig, self.ax = plt.subplots()
@@ -72,7 +73,7 @@ class ConeLocalizationNode(Node):
     def drive_callback(self, data):
         print("drive_callback")
         if data.data:
-            self.robot_state = 2 # calibrate_rotation
+            self.robot_state = 2  # calibrate_rotation
         else:
             self.robot_state = (self.robot_state + 1) % len(self.robot_state_list)
 
@@ -82,17 +83,16 @@ class ConeLocalizationNode(Node):
         if self.robot_state == 1:  # if == 0 than robot should detect cones
             return
 
-        elif self.robot_state == 2: # calibration of position
+        elif self.robot_state == 2:  # calibration of position
             offset_x, offset_y = self.recalibrate_position(laser)
             calibration_message = Float64MultiArray()
-            calibration_message.data = [offset_x, offset_y]
+            calibration_message.data = [offset_x * self.calibration_bias, offset_y * self.calibration_bias]
             print(offset_x, offset_y)
             self.calbiration_publisher.publish(calibration_message)
             self.robot_state = 0
             return
         elif self.robot_state == 3 or self.robot_state == 5:
             return
-
 
         lidar_data = np.asarray(laser.ranges[::-1])
         r, p, y = tf_transformations.euler_from_quaternion(
@@ -115,7 +115,7 @@ class ConeLocalizationNode(Node):
             # cluster new cones and append them to cones_clustered
 
             if len(self.cones_new) > 0:
-                clustered_cones = self.use_dbscan(self.cones_new, _min_samples=self.RATE_OF_DBSCAN, _eps=0.15)
+                clustered_cones = self.use_dbscan(self.cones_new, _min_samples=self.RATE_OF_DBSCAN - 4, _eps=0.15)
                 for c in clustered_cones:
                     self.cones_clustered.append(c)
                 self.cones_new = []
@@ -142,7 +142,6 @@ class ConeLocalizationNode(Node):
                     if self.next_drive_commands is None:
                         # wir müssen uns rotieren, um Informationen zu sammeln
                         self.robot_state = 3
-                        print(self.position[2])
                         target_angle = np.deg2rad(self.position[2] - 40) + np.pi
                         msg = Float64()
                         msg.data = target_angle
@@ -163,7 +162,7 @@ class ConeLocalizationNode(Node):
                             # wir müssen uns rotieren, um Informationen zu sammeln
                             self.robot_state = 3
                             print(self.position[2])
-                            target_angle = np.deg2rad(self.position[2] - 60) + np.pi
+                            target_angle = np.deg2rad(self.position[2] - 40) + np.pi
                             msg = Float64()
                             msg.data = target_angle
                             self.rotation_publisher.publish(msg)
@@ -175,7 +174,7 @@ class ConeLocalizationNode(Node):
 
                 elif self.robot_state == 4:
                     self.robot_state = 5
-                    target_angle = np.deg2rad(self.position[2] + 120) + np.pi
+                    target_angle = np.deg2rad(self.position[2] + 80) + np.pi
                     msg = Float64()
                     msg.data = target_angle
                     self.rotation_publisher.publish(msg)
@@ -184,30 +183,31 @@ class ConeLocalizationNode(Node):
 
     def recalibrate_position(self, laser):
 
-        #PARAMS FOR FUNCTION
-        eps_for_DBSCAN = .04
+        # PARAMS FOR FUNCTION
+        eps_for_DBSCAN = .01
         min_samples_for_DBSCAN = 4
-        max_distance = .4
+        max_distance = .6
         distance_threshold = 0.2
 
         offset_x_list = []
         offset_y_list = []
-        laser = laser.ranges[::-1] # swapped lidar_data
+        laser = laser.ranges[::-1]  # swapped lidar_data
         modified_laser = []
         for i in range(len(laser)):
             x, y = self.get_euclidean_coordinates((i - self.position[2]) % 360, laser[i])
             x += self.position[0]
             y += self.position[1]
             modified_laser.append([x, y, 1, 1])
-        clustered_lidar_data = self.use_dbscan(modified_laser, _min_samples=min_samples_for_DBSCAN, _eps=eps_for_DBSCAN) # clustering the lidar_data, hyperparameters might need to be changed
+        clustered_lidar_data = self.use_dbscan(modified_laser, _min_samples=min_samples_for_DBSCAN,
+                                               _eps=eps_for_DBSCAN)  # clustering the lidar_data, hyperparameters might need to be changed
         cone_knowledge = self.cones_clustered.copy()
         # same max distance for knowledge base
         for cone in cone_knowledge:
             cone_dist = self.get_euclidean_distance(cone, self.position)
             if cone_dist > max_distance:
-                cone_knowledge.remove(cone) # now only cones with max dist of 1 are left
+                cone_knowledge.remove(cone)  # now only cones with max dist of 1 are left
 
-        #ploting for debuggin
+        # ploting for debuggin
         self.ax.cla()
         self.ax.scatter(self.position[0], self.position[1], color='black', alpha=1)
 
@@ -261,6 +261,7 @@ class ConeLocalizationNode(Node):
         blue_cones = cone_data[0].copy()
         orange_cones = cone_data[1].copy()
         yellow_cones = cone_data[2].copy()
+
         if len(orange_cones) == 2 and len(blue_cones) > 0 and len(yellow_cones) > 0:
             first_is_blue = False
             blue_near, blue_distance = self.get_nearest_cone(orange_cones[0], blue_cones)
@@ -311,22 +312,27 @@ class ConeLocalizationNode(Node):
 
             return [blue_track, yellow_track]
         else:
-            return []
+            return None
 
     def calculate_drive(self, track):
+
+        # PARAMS
+        dist_threshold = .8
+
         if len(track) == 2:
             blue_track = track[0].copy()
             yellow_track = track[1].copy()
             out = []
             for b_cone in blue_track:
                 y_cone, y_dist = self.get_nearest_cone(b_cone, yellow_track)
-                b_x = b_cone[0]
-                b_y = b_cone[1]
-                y_x = y_cone[0]
-                y_y = y_cone[1]
-                x_mid = (b_x + y_x) / 2
-                y_mid = (b_y + y_y) / 2
-                out.append([x_mid, y_mid])
+                if y_dist < dist_threshold:
+                    b_x = b_cone[0]
+                    b_y = b_cone[1]
+                    y_x = y_cone[0]
+                    y_y = y_cone[1]
+                    x_mid = (b_x + y_x) / 2
+                    y_mid = (b_y + y_y) / 2
+                    out.append([x_mid, y_mid])
 
             if len(out) > 0:
                 self.start.append(out[0])
@@ -427,6 +433,10 @@ class ConeLocalizationNode(Node):
         """
         Plots the current situation with matplotlib
         """
+
+        #plotsize
+        PLOT_SIZE = 3.5
+
         # draw robot in the middle
         self.ax.cla()
         X = [self.position[0]]
@@ -441,8 +451,8 @@ class ConeLocalizationNode(Node):
             lidar_y.append(entry[1])
 
         self.ax.scatter(lidar_x, lidar_y, s=.4)
-        self.ax.set_ylim(-2 + +Y[0], 2 + Y[0])
-        self.ax.set_xlim(-2 + X[0], 2 + X[0])
+        self.ax.set_ylim(-PLOT_SIZE + +Y[0], PLOT_SIZE + Y[0])
+        self.ax.set_xlim(-PLOT_SIZE + X[0], PLOT_SIZE + X[0])
         line_x = []
         line_y = []
         dist = np.linspace(0, 2, 100)
@@ -496,7 +506,7 @@ class ConeLocalizationNode(Node):
         self.ax.scatter(x_cone, y_cone, color=colors, alpha=.3)
         self.ax.scatter(x_cone_clustered, y_cone_clustered, color=colors_clustered, marker="x")
 
-        if len(self.track) == 2:
+        if self.track is not None:
             blue_track = self.track[0]
             yellow_track = self.track[1]
             blue_x = [cone[0] for cone in blue_track]
@@ -506,19 +516,11 @@ class ConeLocalizationNode(Node):
             self.ax.plot(blue_x, blue_y, color='blue')
             self.ax.plot(yellow_x, yellow_y, color='yellow')
 
-        track_x = []
-        track_y = []
-        if self.next_drive_commands != None:
-            for checkpoint in self.next_drive_commands:
-                track_x.append(checkpoint[0])
-                track_y.append(checkpoint[1])
+        if self.next_drive_commands is not None:
+            if len(self.next_drive_commands) > 0:
+                self.ax.scatter(self.next_drive_commands[0][0], self.next_drive_commands[0][1], color='tab:gray')
 
-        self.ax.scatter(track_x, track_y, color='tab:gray')
-        self.ax.plot(track_x, track_y, color='tab:gray')
-
-        # plt.show() # for testing at home
-
-        plt.pause(.1) # normal code when working with the bot
+        plt.pause(.1)  # normal code when working with the bot
 
     @staticmethod
     def get_euclidean_distance(cone1, cone2):

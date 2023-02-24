@@ -26,8 +26,10 @@ class AutonomousController(Node):
         self.start_position = None
         self.next_target = None
         self.target_queue = None
+
         self.distance_threshold = 0.03 # 8cm
-        self.angular_threshold = np.deg2rad(.05) # 0,5° Abweichung
+        self.angular_threshold = np.deg2rad(.5) # 0,5° Abweichung
+        self.max_lin_vel = .2
 
     def received_track_callback(self, track):
         self.get_logger().info("<- new track")
@@ -56,6 +58,8 @@ class AutonomousController(Node):
 
             else:
                 print("angle arrived")
+                twist = Twist()
+                self.speed_publisher.publish(twist)
                 msg_bool = Bool()
                 self.rotation_state = False
                 self.rotation_target_angle = None
@@ -95,7 +99,10 @@ class AutonomousController(Node):
                 self.lin_vel = .0
             else:
                 print("vorwärts")
-                self.lin_vel = .05
+                if self.lin_vel == 0:
+                    self.lin_vel = .05
+                else:
+                    self.lin_vel = max(self.lin_vel + .0005, self.max_lin_vel)
 
             print("distance:", target_distance)
             print("angle:", self.normalize_radians(abs(((delta_yaw - angle_to_target) % (np.pi*2)))))

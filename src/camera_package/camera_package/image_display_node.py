@@ -35,7 +35,7 @@ class ImageDisplayNode(Node):
         # uncomment to see raw images as well note that this will use more bandwidth
         self.raw_images_subscription_ = self.create_subscription(Image, 'raw_images', self.raw_callback, 10)
         self.camera_ctrl_publisher_ = self.create_publisher(Float64, '/camera/freq', 10)
-        self.lidar_graph_publisher_ = self.create_publisher(Float64, '/rotation', 10)
+        self.rotation_publisher= self.create_publisher(Float64, '/rotation', 10)
         self.shutter_publisher_ = self.create_publisher(Bool, '/camera/shutter', 10)
         self.bridge = CvBridge()
 

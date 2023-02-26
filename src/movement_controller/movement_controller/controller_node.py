@@ -21,13 +21,13 @@ class Controller(Node):
             char = getattr(key, 'char', None)
             if char in ['w', 'a', 's', 'd']:
                 if char == 'w':
-                    self.linear_vel = .2
+                    self.linear_vel = .1
                 elif char == 's':
-                    self.linear_vel = -.2
+                    self.linear_vel = -.1
                 elif char == 'a':
-                    self.angular_vel = 1.
+                    self.angular_vel = .3
                 elif char == 'd':
-                    self.angular_vel = -1.
+                    self.angular_vel = -.3
 
         except Exception as e:
             self.get_logger().error(str(e))

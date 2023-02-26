@@ -1,5 +1,7 @@
 import sys
 import os
+
+import numpy as np
 from cv_bridge import CvBridge
 from PyQt5 import QtWidgets, QtGui
 import rclpy
@@ -11,6 +13,8 @@ from threading import Thread
 from .hmi import Ui_MainWindow
 from datetime import datetime, timezone
 
+from avai_messages.msg import Track
+from nav_msgs.msg import Odometry
 
 class ImageDisplayNode(Node):
     # simple node to show images from image_processing_node and to control camera_node
@@ -31,7 +35,7 @@ class ImageDisplayNode(Node):
         # uncomment to see raw images as well note that this will use more bandwidth
         self.raw_images_subscription_ = self.create_subscription(Image, 'raw_images', self.raw_callback, 10)
         self.camera_ctrl_publisher_ = self.create_publisher(Float64, '/camera/freq', 10)
-        self.lidar_graph_publisher_ = self.create_publisher(Bool, '/lidar/graph', 10)
+        self.rotation_publisher= self.create_publisher(Float64, '/rotation', 10)
         self.shutter_publisher_ = self.create_publisher(Bool, '/camera/shutter', 10)
         self.bridge = CvBridge()
 
@@ -79,11 +83,11 @@ class ImageDisplayNode(Node):
         # filename = "img/raw/" + str(int(datetime.now(timezone.utc).timestamp() * 1000000)) + ".png"
         # cv2.imwrite(filename, frame)
 
-    def display_lidar_graph_(self):
-        msg = Bool()
-        msg.data = True
-        self.get_logger().info('graph request->')
-        self.lidar_graph_publisher_.publish(msg)
+    def publish_rotation(self):
+        msg = Float64()
+        msg.data = np.deg2rad(180)
+        self.get_logger().info('new Track->')
+        self.rotation_publisher.publish(msg)
 
 
 def main(args=None):

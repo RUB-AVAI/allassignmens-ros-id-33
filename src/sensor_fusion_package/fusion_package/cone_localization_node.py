@@ -1,16 +1,18 @@
-import cv2
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Float32MultiArray, Bool
-import numpy as np
+from rclpy.qos import qos_profile_sensor_data, QoSProfile
+
+from std_msgs.msg import Bool, Float64MultiArray, Float64
 from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import Odometry
-from matplotlib import pyplot as plt
-from rclpy.qos import qos_profile_sensor_data, QoSProfile
+from avai_messages.msg import Cones, Track
+
 import message_filters
-from avai_messages.msg import Cones
-from sklearn.cluster import DBSCAN
 import tf_transformations
+import numpy as np
+from sklearn.cluster import DBSCAN
+from matplotlib import pyplot as plt
+from typing import List
 
 
 # cone_color_code: blue = 0, orange = 1, yellow = 2
@@ -20,87 +22,240 @@ class ConeLocalizationNode(Node):
     def __init__(self):
         super().__init__('cone_localization_node')
 
+        # variables for conedetection
         self.cones_new = []
         self.cones_clustered = []
         self.lidar_data = []
-        self.track = []
-        self.startup_position = []
-        self.relative_position = []
-        self.sign = -1  # quick fix for reversed odometry
 
+        # variables for track calculation
+        self.track = None
+        self.autonomous_track = None
+        self.calibrated_position = []
+        self.position = []
+
+        # variables for autonomous drive
+        self.start = []
+        self.start_arrived = False
+        self.next_drive_commands = []
+        self.robot_state = 0
+        self.robot_state_list = ["detecting_cones", "driving", "calibrating_position", "rotating_for_information_right",
+                                 "detecting_after_rotation", "rotating_for_information_left"]
+
+        # variables for DBSCAN
         self.count_for_DBSCAN = 0
-        self.RATE_OF_DBSCAN = 8
+        self.RATE_OF_DBSCAN = 12
 
+        # constants
+        self.avarage_radius = .002
+        self.calibration_bias = .3
+
+        # variables for plotting
         self.fig, self.ax = plt.subplots()
 
+        # synchronized subscriptions
         self.laserfilt = message_filters.Subscriber(self, LaserScan, '/scan', qos_profile=qos_profile_sensor_data)
-        self.odomfilt = message_filters.Subscriber(self, Odometry, '/odom')
+        self.odomfilt = message_filters.Subscriber(self, Odometry, '/codom')
         self.labelfilt = message_filters.Subscriber(self, Cones, '/images/labels')
-
-        self.mocksub = self.create_subscription(Bool, '/lidar/graph', self.mock_callback, 10)
-
         self.draw_synchronizer = message_filters.ApproximateTimeSynchronizer([self.laserfilt, self.odomfilt],
-                                                                             queue_size=25, slop=.2)
+                                                                             queue_size=500, slop=.05)
         self.draw_synchronizer.registerCallback(self.synchronized_callback)
-
         self.cone_synchronizer = message_filters.ApproximateTimeSynchronizer(
-            [self.laserfilt, self.odomfilt, self.labelfilt], queue_size=50, slop=.05)
+            [self.laserfilt, self.odomfilt, self.labelfilt], queue_size=500, slop=.05)
         self.cone_synchronizer.registerCallback(self.fusion_callback)
 
-    def mock_callback(self, data):
-        self.relative_position = [0, 0, -90]
-        self.cones_clustered = [[0, 0, 1, 1], [0.2, 0, 1, 1], [0.2, 0.2, 1, 2], [0.2, 0.55, 1, 2], [0.3, 0.8, 1, 2],
-                                [0.4, 1.2, 1, 2], [0, 0.2, 0, 0], [0, 0.45, 1, 0], [0.1, 0.8, 1, 0], [0.2, 1.1, 1, 0]]
-        cone_knowledge = [[], [], []]
-        for cone_known in self.cones_clustered:
-            cone_knowledge[int(cone_known[3])].append(cone_known)
-        self.track = self.calculate_track(cone_knowledge)
-        self.draw()
+        # subscriber and publisher for driving mission
+        self.trackpublisher = self.create_publisher(Track, '/track', 10)
+        self.drivesub = self.create_subscription(Bool, 'drive', self.drive_callback, 10)
+        self.rotation_publisher = self.create_publisher(Float64, '/rotation', 10)
+
+        self.calbiration_publisher = self.create_publisher(Float64MultiArray, '/position_calibration', 10)
+
+    def drive_callback(self, data):
+        print("drive_callback")
+        if data.data:
+            self.robot_state = 2  # calibrate_rotation
+        else:
+            self.robot_state = (self.robot_state + 1) % len(self.robot_state_list)
 
     def fusion_callback(self, laser, odom, labels):
 
-        self.get_logger().info("Start sensor fusion")
+        print(self.robot_state_list[self.robot_state], ": ", self.robot_state)
+        if self.robot_state == 1:  # if == 0 than robot should detect cones
+            return
+
+        elif self.robot_state == 2:  # calibration of position
+            offset_x, offset_y = self.recalibrate_position(laser)
+            calibration_message = Float64MultiArray()
+            calibration_message.data = [offset_x * self.calibration_bias, offset_y * self.calibration_bias]
+            print(offset_x, offset_y)
+            self.calbiration_publisher.publish(calibration_message)
+            self.robot_state = 0
+            return
+        elif self.robot_state == 3 or self.robot_state == 5:
+            return
+
         lidar_data = np.asarray(laser.ranges[::-1])
         r, p, y = tf_transformations.euler_from_quaternion(
             [odom.pose.pose.orientation.x, odom.pose.pose.orientation.y, odom.pose.pose.orientation.z,
              odom.pose.pose.orientation.w])
 
-        position = np.asarray([odom.pose.pose.position.x, odom.pose.pose.position.y, np.rad2deg(-y)])
-        if len(self.startup_position) == 0:
-            self.startup_position = position
+        self.position = [odom.pose.pose.position.x, odom.pose.pose.position.y, np.rad2deg(y)]
 
-        rel_pos = [self.sign * (position[0] - self.startup_position[0]),
-                   self.sign * (position[1] - self.startup_position[1]),
-                   (self.startup_position[2] - position[2]) % 360]
-        self.relative_position = rel_pos
         cone_labels = labels.cones
+        cones = self.received_labels(cone_labels, lidar_data, self.position)
 
-        cones = self.received_labels(cone_labels, lidar_data, rel_pos)
         for cone in cones:
             self.cones_new.append(cone)
 
         self.count_for_DBSCAN += 1
 
-        if self.count_for_DBSCAN == self.RATE_OF_DBSCAN:
+        if (self.count_for_DBSCAN % self.RATE_OF_DBSCAN) == 0:
             self.get_logger().info("using DBSCAN")
+
             # cluster new cones and append them to cones_clustered
 
             if len(self.cones_new) > 0:
-                clustered_cones = self.use_dbscan(self.cones_new)
+                clustered_cones = self.use_dbscan(self.cones_new, _min_samples=self.RATE_OF_DBSCAN - 4, _eps=0.15)
                 for c in clustered_cones:
                     self.cones_clustered.append(c)
                 self.cones_new = []
             # cluster already clustered cones
             if len(self.cones_clustered) > 0:
-                self.cones_clustered = self.use_dbscan(self.cones_clustered, 1)
+                self.cones_clustered = self.use_dbscan(self.cones_clustered, _min_samples=1, _eps=0.15)
 
                 cone_knowledge = [[], [], []]
                 for cone_known in self.cones_clustered:
                     cone_knowledge[int(cone_known[3])].append(cone_known)
-                self.track = self.calculate_track(cone_knowledge)
+
+                if self.robot_state == 0:
+
+                    self.track = self.calculate_track(cone_knowledge)
+                    self.autonomous_track = self.calculate_drive(self.track)
+
+                    if self.start_arrived: # wir waren bereits am Start, also an den orangen Cones
+                        self.next_drive_commands = self.calculate_next_drive_commands(self.autonomous_track,
+                                                                                      self.position)
+                    else:
+                        self.next_drive_commands = self.start
+                        self.start_arrived = True
+
+                    if self.next_drive_commands is None:
+                        # wir müssen uns rotieren, um Informationen zu sammeln
+                        self.robot_state = 3
+                        target_angle = np.deg2rad(self.position[2] - 40) + np.pi
+                        msg = Float64()
+                        msg.data = target_angle
+                        self.rotation_publisher.publish(msg)
+                        return
+
+                    else:
+
+                        # publish the track_message
+                        track_message = Track()
+                        track_message.start = odom
+                        drive_x = [checkpoint[0] for checkpoint in self.next_drive_commands]
+                        drive_y = [checkpoint[1] for checkpoint in self.next_drive_commands]
+                        track_message.x = drive_x
+                        track_message.y = drive_y
+
+                        if len(track_message.x) == 0:
+                            # wir müssen uns rotieren, um Informationen zu sammeln
+                            self.robot_state = 3
+                            print(self.position[2])
+                            target_angle = np.deg2rad(self.position[2] - 40) + np.pi
+                            msg = Float64()
+                            msg.data = target_angle
+                            self.rotation_publisher.publish(msg)
+                            self.count_for_DBSCAN = 0
+
+                        else:
+                            self.trackpublisher.publish(track_message)
+                            self.robot_state = 1
+
+                elif self.robot_state == 4:
+                    self.robot_state = 5
+                    target_angle = np.deg2rad(self.position[2] + 80) + np.pi
+                    msg = Float64()
+                    msg.data = target_angle
+                    self.rotation_publisher.publish(msg)
+
             self.count_for_DBSCAN = 0  # To prevent overflow
 
+    def recalibrate_position(self, laser):
+
+        # PARAMS FOR FUNCTION
+        eps_for_DBSCAN = .01
+        min_samples_for_DBSCAN = 4
+        max_distance = .6
+        distance_threshold = 0.2
+
+        offset_x_list = []
+        offset_y_list = []
+        laser = laser.ranges[::-1]  # swapped lidar_data
+        modified_laser = []
+        for i in range(len(laser)):
+            x, y = self.get_euclidean_coordinates((i - self.position[2]) % 360, laser[i])
+            x += self.position[0]
+            y += self.position[1]
+            modified_laser.append([x, y, 1, 1])
+        clustered_lidar_data = self.use_dbscan(modified_laser, _min_samples=min_samples_for_DBSCAN,
+                                               _eps=eps_for_DBSCAN)  # clustering the lidar_data, hyperparameters might need to be changed
+        cone_knowledge = self.cones_clustered.copy()
+        # same max distance for knowledge base
+        for cone in cone_knowledge:
+            cone_dist = self.get_euclidean_distance(cone, self.position)
+            if cone_dist > max_distance:
+                cone_knowledge.remove(cone)  # now only cones with max dist of 1 are left
+
+        # ploting for debuggin
+        self.ax.cla()
+        self.ax.scatter(self.position[0], self.position[1], color='black', alpha=1)
+
+        self.ax.set_ylim(-2 + self.position[1], 2 + self.position[1])
+        self.ax.set_xlim(-2 + self.position[0], 2 + self.position[0])
+
+        cone_x = []
+        cone_y = []
+        cone_color = []
+        for cone in clustered_lidar_data:
+            cone_x.append(cone[0])
+            cone_y.append(cone[1])
+            if cone[3] == 0:
+                cone_color.append('blue')
+            elif cone[3] == 1:
+                cone_color.append('orange')
+            elif cone[3] == 2:
+                cone_color.append('yellow')
+            else:
+                cone_color.append('red')  # error case
+
+        self.ax.scatter(cone_x, cone_y, color=cone_color)
+
+        lidar_x = []
+        lidar_y = []
+
+        for lidar_point in modified_laser:
+            lidar_x.append(lidar_point[0])
+            lidar_y.append(lidar_point[1])
+
+        self.ax.scatter(lidar_x, lidar_y, s=.2)
+        plt.pause(.1)
+
+        # matching cones and lidar data
+        for cone in cone_knowledge:
+            matched_cluster, distance = self.get_nearest_cone(cone, clustered_lidar_data)
+            if distance < distance_threshold:
+                offset_x_list.append(matched_cluster[0] - cone[0])
+                offset_y_list.append(matched_cluster[1] - cone[1])
+        if len(offset_x_list) < 1:
+            return .0, .0
+        # return the mean of the distances in x, y and angle as the offset
+        return np.mean(offset_x_list), np.mean(offset_y_list)
+
     def calculate_track(self, cone_data):
+
+        # params
+        MAX_DIST = .6
 
         # calculate the trackbeginning from orange cone to yellow/blue
         blue_cones = cone_data[0].copy()
@@ -126,7 +281,6 @@ class ConeLocalizationNode(Node):
                 y0, y_dist = self.get_nearest_cone(orange_cones[1], yellow_cones)
                 yellow_track.append(y0)
                 yellow_cones.remove(y0)
-
             else:
                 yellow_track.append(orange_cones[0])
                 yellow_track.append(yellow_near)
@@ -139,23 +293,68 @@ class ConeLocalizationNode(Node):
             blue_track_index = 1
             while len(blue_cones) > 0:
                 cone_blue, cone_distance = self.get_nearest_cone(blue_track[blue_track_index], blue_cones)
-                blue_track.append(cone_blue)
-                blue_cones.remove(cone_blue)
-                blue_track_index += 1
+                if cone_distance < MAX_DIST:
+                    blue_track.append(cone_blue)
+                    blue_cones.remove(cone_blue)
+                    blue_track_index += 1
+                else:
+                    break
 
             yellow_track_index = 1
             while len(yellow_cones) > 0:
                 cone_yellow, cone_distance = self.get_nearest_cone(yellow_track[yellow_track_index], yellow_cones)
-                yellow_track.append(cone_yellow)
-                yellow_cones.remove(cone_yellow)
-                yellow_track_index += 1
+                if cone_distance < MAX_DIST:
+                    yellow_track.append(cone_yellow)
+                    yellow_cones.remove(cone_yellow)
+                    yellow_track_index += 1
+                else:
+                    break
 
             return [blue_track, yellow_track]
+        else:
+            return None
 
+    def calculate_drive(self, track):
+
+        # PARAMS
+        dist_threshold = .8
+
+        if len(track) == 2:
+            blue_track = track[0].copy()
+            yellow_track = track[1].copy()
+            out = []
+            for b_cone in blue_track:
+                y_cone, y_dist = self.get_nearest_cone(b_cone, yellow_track)
+                if y_dist < dist_threshold:
+                    b_x = b_cone[0]
+                    b_y = b_cone[1]
+                    y_x = y_cone[0]
+                    y_y = y_cone[1]
+                    x_mid = (b_x + y_x) / 2
+                    y_mid = (b_y + y_y) / 2
+                    out.append([x_mid, y_mid])
+
+            if len(out) > 0:
+                self.start.append(out[0])
+            return out
         else:
             return []
 
-    def get_nearest_cone(self, reference_cone, cone_list):
+    def calculate_next_drive_commands(self, auto_track, position):
+
+        robot_position_as_cone = [position[0], position[1], 1, 1]
+
+        nearest_checkpoint, distance_to_checkpoint = self.get_nearest_cone(robot_position_as_cone, auto_track)
+
+        index_of_current_checkpoint = auto_track.index(nearest_checkpoint)
+        next_checkpoint = index_of_current_checkpoint + 1
+
+        if next_checkpoint > len(auto_track) - 1:
+            return None
+        return [auto_track[next_checkpoint]]
+
+    def get_nearest_cone(self, reference_cone: list, cone_list: List[list]):
+
         if len(cone_list) == 0:
             return None
         nearest_cone = cone_list[0]
@@ -169,7 +368,6 @@ class ConeLocalizationNode(Node):
 
     def use_dbscan(self, data_set, _min_samples=4, _eps=.1):
         # clustering over x, y, color
-        # TODO: Check whether values are saved correctly for clustering!
         x_train = []
         # We set the z coordinate of the cones points in DBSCAN as DIGIT_FOR_COLOR * (_eps + 1)
         # to prevent clustering cones of different color to one.
@@ -185,7 +383,6 @@ class ConeLocalizationNode(Node):
 
         DBSCAN_dataset = data_set.copy()
         # using np.concatenate method, because faster
-        # TODO: Check concatenation!
         DBSCAN_dataset = np.concatenate((DBSCAN_dataset, cluster_labels[:, np.newaxis]), axis=1)
 
         amount_cones = len(set(cluster_labels))
@@ -215,24 +412,18 @@ class ConeLocalizationNode(Node):
         r, p, y = tf_transformations.euler_from_quaternion(
             [odom.pose.pose.orientation.x, odom.pose.pose.orientation.y, odom.pose.pose.orientation.z,
              odom.pose.pose.orientation.w])
-        position = [odom.pose.pose.position.x, odom.pose.pose.position.y, np.rad2deg(-y)]
 
-        if len(self.startup_position) == 0:
-            self.startup_position = position
+        position = [odom.pose.pose.position.x, odom.pose.pose.position.y, np.rad2deg(y)]
 
-        rel_pos = []
-        rel_pos.append(self.sign * (position[0] - self.startup_position[0]))
-        rel_pos.append(self.sign * (position[1] - self.startup_position[1]))
-        rel_pos.append((self.startup_position[2] - position[2]) % 360)
-        self.relative_position = rel_pos
+        self.position = [position[0], position[1], position[2]]
         l_data = []
         for angle in range(len(lidar_data)):
             distance = lidar_data[angle]
 
-            x, y = self.get_euclidean_coordinates((angle - rel_pos[2]) % 360, distance)
+            x, y = self.get_euclidean_coordinates((angle - position[2]) % 360, distance)
 
-            x += self.relative_position[0]
-            y += self.relative_position[1]
+            x += self.position[0]
+            y += self.position[1]
             l_data.append([x, y])
 
         self.lidar_data = l_data
@@ -242,11 +433,15 @@ class ConeLocalizationNode(Node):
         """
         Plots the current situation with matplotlib
         """
+
+        #plotsize
+        PLOT_SIZE = 3.5
+
         # draw robot in the middle
         self.ax.cla()
-        X = [self.relative_position[0]]
-        Y = [self.relative_position[1]]
-        self.ax.scatter(self.relative_position[0], self.relative_position[1], color='black', alpha=1)
+        X = [self.position[0]]
+        Y = [self.position[1]]
+        self.ax.scatter(self.position[0], self.position[1], color='black', alpha=1)
 
         lidar_x = []
         lidar_y = []
@@ -256,13 +451,13 @@ class ConeLocalizationNode(Node):
             lidar_y.append(entry[1])
 
         self.ax.scatter(lidar_x, lidar_y, s=.4)
-        self.ax.set_ylim(-2 + +Y[0], 2 + Y[0])
-        self.ax.set_xlim(-2 + X[0], 2 + X[0])
+        self.ax.set_ylim(-PLOT_SIZE + +Y[0], PLOT_SIZE + Y[0])
+        self.ax.set_xlim(-PLOT_SIZE + X[0], PLOT_SIZE + X[0])
         line_x = []
         line_y = []
         dist = np.linspace(0, 2, 100)
 
-        orientation = self.relative_position[2]
+        orientation = self.position[2]
 
         for d in dist:
             lx, ly = self.get_euclidean_coordinates((148 - orientation) % 360, d)
@@ -311,7 +506,7 @@ class ConeLocalizationNode(Node):
         self.ax.scatter(x_cone, y_cone, color=colors, alpha=.3)
         self.ax.scatter(x_cone_clustered, y_cone_clustered, color=colors_clustered, marker="x")
 
-        if len(self.track) == 2:
+        if self.track is not None:
             blue_track = self.track[0]
             yellow_track = self.track[1]
             blue_x = [cone[0] for cone in blue_track]
@@ -320,7 +515,12 @@ class ConeLocalizationNode(Node):
             yellow_y = [cone[1] for cone in yellow_track]
             self.ax.plot(blue_x, blue_y, color='blue')
             self.ax.plot(yellow_x, yellow_y, color='yellow')
-        plt.pause(.1)
+
+        if self.next_drive_commands is not None:
+            if len(self.next_drive_commands) > 0:
+                self.ax.scatter(self.next_drive_commands[0][0], self.next_drive_commands[0][1], color='tab:gray')
+
+        plt.pause(.1)  # normal code when working with the bot
 
     @staticmethod
     def get_euclidean_distance(cone1, cone2):
@@ -329,6 +529,13 @@ class ConeLocalizationNode(Node):
         x2 = cone2[0]
         y2 = cone2[1]
         return np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+
+    @staticmethod
+    def get_angle(current_position, cone):
+        normalized_position_x = cone[0] - current_position[0]
+        normalized_position_y = cone[1] - current_position[1]
+
+        return np.arctan2(normalized_position_y, normalized_position_x) + cone[2]
 
     @staticmethod
     def get_euclidean_coordinates(angle, distance) -> tuple:
@@ -362,20 +569,17 @@ class ConeLocalizationNode(Node):
             start += offset
             end += offset
             shift = difference * 1 / 6
-
             cone_distances = lidar_data[round(start + shift):round(end - shift)]
-            cone_distances = list(filter(lambda x: 0 < x < 2.5, cone_distances))
+            cone_distances = list(filter(lambda x: 0 < x < 1.7, cone_distances))
 
             if len(cone_distances) < 2:
                 continue
             else:
                 distance = np.median(cone_distances)
                 angle = (start + end) / 2.
-                x, y = self.get_euclidean_coordinates((angle - position[2]) % 360, distance)
-                delta_rotation = position[2]
+                x, y = self.get_euclidean_coordinates((angle - position[2]) % 360, distance + self.avarage_radius)
                 x += position[0]
                 y += position[1]
-                #print("x: ", x, "y: ", y)
                 received_cones.append([x, y, cone[4], cone[5]])
         return received_cones
 

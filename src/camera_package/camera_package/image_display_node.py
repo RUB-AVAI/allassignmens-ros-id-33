@@ -13,8 +13,6 @@ from threading import Thread
 from .hmi import Ui_MainWindow
 from datetime import datetime, timezone
 
-from avai_messages.msg import Track
-from nav_msgs.msg import Odometry
 
 class ImageDisplayNode(Node):
     # simple node to show images from image_processing_node and to control camera_node
@@ -27,7 +25,6 @@ class ImageDisplayNode(Node):
         self.ui = ui
         self.ui.shutterBtn.clicked.connect(self.camera_shutter_callback_)
         self.ui.updateCameraFreqBtn.clicked.connect(self.camera_freq_publisher_callback_)
-        self.ui.showLidarBtn.clicked.connect(self.display_lidar_graph_)
 
         self.processed_images_subscription_ = self.create_subscription(
             Image, '/images/processed', self.processed_callback, 10)

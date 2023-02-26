@@ -1,13 +1,11 @@
 from unittest import TestCase
 
-import PIL.Image
 import cv2
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
-import numpy as np
-import asyncio
+
 
 from src.camera_package.camera_package.image_processing_node import ImageProcessingNode
 
@@ -28,10 +26,15 @@ class ImageProcessingNodeUnitTest(TestCase):
     def tearDown(self) -> None:
         self.ipNode.destroy_node()
 
+
+
+
     # =========== UNIT TESTS ===============
     def test_topics(self):
         self.assertEqual("/images/processed", self.ipNode.publisher_.topic_name)
         self.assertEqual("/images/raw", self.ipNode.subscription_.topic_name)
+
+
 
 
 # =========== INTEGRATION TESTS ===============
